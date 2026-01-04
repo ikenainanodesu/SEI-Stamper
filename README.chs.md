@@ -16,9 +16,9 @@ OBS SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP �
 
 **主要特性：**
 - 🎯 **帧精确同步** - 使用 NTP 时间戳
-- 📡 **多编码器支持** - H.264、H.265/HEVC、AV1
+- 📡 **Intel QuickSync H.264 编码器** - 支持 SEI 的硬件加速编码
 - 🔄 **完整方案** - 包含发送端和接收端
-- 🌐 **SRT 流媒体** - 内置 SRT 接收器，低延迟传输
+- 🌐 **SRT 流媒体** - 内置 SRT 接收器,低延迟传输
 - ⏱️ **微秒精度** - 基于 NTP 的专业级时间同步
 
 ### 应用场景
@@ -79,10 +79,8 @@ OBS SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP �
 ### 发送端（编码器）
 
 1. 打开 **设置 → 输出 → 输出模式：高级**
-2. 选择 SEI Stamper 编码器之一：
-   - **SEI Stamper (H.264)**
-   - **SEI Stamper (H.265/HEVC)**
-   - **SEI Stamper (AV1)**
+2. 选择 SEI Stamper 编码器：
+   - **SEI Stamper (H.264 QuickSync)**
 3. 配置编码器属性：
    - **NTP 服务器**：`time.windows.com`（或您的 NTP 服务器）
    - **NTP 端口**：`123`（默认）
@@ -156,11 +154,9 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 ### 支持的编码器
 
-| 编码器 | SEI NAL 类型 | 状态 |
-|--------|-------------|------|
-| H.264  | Type 6      | ✅   |
-| H.265  | Type 39/40  | ✅   |
-| AV1    | Metadata OBU| ✅   |
+| 编码器 | SEI NAL 类型 | 硬件加速 | 状态 |
+|--------|-------------|---------|------|
+| H.264  | Type 6      | Intel QuickSync | ✅   |
 
 ---
 

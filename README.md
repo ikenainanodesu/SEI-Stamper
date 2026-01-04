@@ -17,7 +17,7 @@ OBS SEI Stamper is an OBS Studio plugin that enables **frame-level video synchro
 
 **Key Features:**
 - 🎯 **Frame-accurate synchronization** using NTP timestamps
-- 📡 **Multi-codec support**: H.264, H.265/HEVC, AV1
+- 📡 **Intel QuickSync H.264 encoder**: Hardware-accelerated encoding with SEI support
 - 🔄 **Sender & Receiver**: Complete solution for encoding and decoding
 - 🌐 **SRT streaming**: Built-in SRT receiver for low-latency streaming
 - ⏱️ **Microsecond precision**: NTP-based timing for professional applications
@@ -80,10 +80,8 @@ The release package includes:
 ### Sender (Encoder)
 
 1. Open **Settings → Output → Output Mode: Advanced**
-2. Select one of the SEI Stamper encoders:
-   - **SEI Stamper (H.264)**
-   - **SEI Stamper (H.265/HEVC)**
-   - **SEI Stamper (AV1)**
+2. Select the SEI Stamper encoder:
+   - **SEI Stamper (H.264 QuickSync)**
 3. Configure encoder properties:
    - **NTP Server**: `time.windows.com` (or your preferred NTP server)
    - **NTP Port**: `123` (default)
@@ -155,13 +153,11 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
   - PTS (8 bytes)
   - NTP Timestamp (8 bytes: 4 bytes seconds + 4 bytes fraction)
 
-### Supported Encoders
+### Supported Encoder
 
-| Encoder | SEI NAL Type | Status |
-|---------|--------------|--------|
-| H.264   | Type 6       | ✅     |
-| H.265   | Type 39/40   | ✅     |
-| AV1     | Metadata OBU | ✅     |
+| Encoder | SEI NAL Type | Hardware Acceleration | Status |
+|---------|--------------|----------------------|--------|
+| H.264   | Type 6       | Intel QuickSync      | ✅     |
 
 ---
 
