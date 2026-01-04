@@ -458,6 +458,63 @@ bool decode_and_extract_sei(sei_receiver_source_t *source, AVPacket *packet,
     }
   }
 
+  /* 智能 NTP 同步策略：
+   * 1. 如果是关键帧（IDR）且有 SEI 时间戳，进行 NTP 同步
+   * 2. 如果本地时间与 NTP 时间差超过 50ms，进行 NTP 同步
+   */
+  if (frame_out->has_ntp && source->ntp_enabled) {
+    bool should_sync = false;
+    uint64_t now = os_gettime_ns();
+
+    /* 条件1: 关键帧同步 */
+    bool is_keyframe =
+        (av_frame->key_frame != 0) || (av_frame->flags & AV_FRAME_FLAG_KEY);
+    if (is_keyframe) {
+      should_sync = true;
+      receiver_log(LOG_DEBUG, source, "Keyframe detected, triggering NTP sync");
+    }
+
+    /* 条件2: 时间差检测 (50ms)  */
+    if (!should_sync && source->ntp_client.is_synced) {
+      /* 计算当前帧的 NTP 时间戳对应的纳秒 */
+      uint64_t frame_ntp_ns =
+          ((uint64_t)frame_out->ntp_time.seconds * 1000000000ULL) +
+          (((uint64_t)frame_out->ntp_time.fraction * 1000000000ULL) >> 32);
+
+      /* 获取当前本地时间对应的 NTP 时间 */
+      ntp_timestamp_t current_ntp;
+      if (ntp_client_get_time(&source->ntp_client, &current_ntp)) {
+        uint64_t current_ntp_ns =
+            ((uint64_t)current_ntp.seconds * 1000000000ULL) +
+            (((uint64_t)current_ntp.fraction * 1000000000ULL) >> 32);
+
+        /* 计算时间差 */
+        int64_t time_diff = (int64_t)(frame_ntp_ns - current_ntp_ns);
+        if (time_diff < 0)
+          time_diff = -time_diff; // 取绝对值
+
+        /* 如果时间差超过 50ms (50,000,000 纳秒) */
+        if (time_diff > 50000000LL) {
+          should_sync = true;
+          receiver_log(LOG_DEBUG, source,
+                       "Time drift detected: %lld ms, triggering NTP sync",
+                       time_diff / 1000000);
+        }
+      }
+    }
+
+    /* 执行 NTP 同步 */
+    if (should_sync) {
+      if (ntp_client_sync(&source->ntp_client)) {
+        source->last_ntp_sync_time = now;
+        receiver_log(LOG_INFO, source, "NTP synchronized (syncs: %u)",
+                     source->ntp_client.sync_count);
+      } else {
+        receiver_log(LOG_WARNING, source, "NTP sync failed");
+      }
+    }
+  }
+
   /* Output to OBS */
   struct obs_source_frame obs_frame = {0};
 
@@ -734,6 +791,7 @@ static void *receiver_source_create(obs_data_t *settings,
 
       /* 执行初始同步 */
       if (ntp_client_sync(&ctx->ntp_client)) {
+        ctx->last_ntp_sync_time = os_gettime_ns();
         receiver_log(LOG_INFO, ctx, "Initial NTP sync successful");
       }
     }
@@ -867,17 +925,20 @@ static void receiver_source_update(void *data, obs_data_t *settings) {
   bool ntp_enabled = obs_data_get_bool(settings, "ntp_enabled");
   if (ntp_enabled != ctx->ntp_enabled) {
     ctx->ntp_enabled = ntp_enabled;
-    // NTP设置变更不需要重启流，只需要启停NTP Client
 
     if (ntp_enabled) {
       const char *ntp_server = obs_data_get_string(settings, "ntp_server");
       uint16_t ntp_port = (uint16_t)obs_data_get_int(settings, "ntp_port");
 
       if (ntp_client_init(&ctx->ntp_client, ntp_server, ntp_port)) {
-        ntp_client_sync(&ctx->ntp_client);
+        if (ntp_client_sync(&ctx->ntp_client)) {
+          ctx->last_ntp_sync_time = os_gettime_ns();
+          receiver_log(LOG_INFO, ctx, "NTP enabled and synchronized");
+        }
       }
     } else {
       ntp_client_destroy(&ctx->ntp_client);
+      receiver_log(LOG_INFO, ctx, "NTP disabled");
     }
   }
 

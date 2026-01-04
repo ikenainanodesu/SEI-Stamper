@@ -113,7 +113,9 @@ The receiver will:
 - Connect to the SRT stream
 - Decode video frames
 - Extract NTP timestamps from SEI
-- Synchronize playback to frame-level accuracy
+- Intelligently synchronize playback using adaptive NTP sync
+
+> **⚠️ Important**: The encoder and receiver **must use the same NTP server** for accurate synchronization.
 
 ---
 
@@ -161,6 +163,30 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
   - UUID (16 bytes)
   - PTS (8 bytes)
   - NTP Timestamp (8 bytes: 4 bytes seconds + 4 bytes fraction)
+
+### NTP Synchronization Strategy
+
+#### Encoder (Sender)
+- **Sync Interval**: Every 60 seconds
+- **Trigger**: Automatic periodic sync during encoding
+- **Purpose**: Ensure encoder's NTP time remains accurate
+
+#### Receiver (Source)
+- **Intelligent Sync**: Adaptive synchronization using two triggers
+  1. **Keyframe Trigger**: Syncs on every keyframe (IDR frame) with SEI
+  2. **Drift Detection**: Syncs when time drift exceeds 50ms
+- **Purpose**: Maintain high precision while minimizing network overhead
+
+**Workflow**:
+```
+Receive Frame with SEI
+   ↓
+Is Keyframe? ──Yes──► Trigger NTP Sync
+   ↓ No
+Time Drift > 50ms? ──Yes──► Trigger NTP Sync
+   ↓ No
+Use Existing NTP Time
+```
 
 ### Supported Encoders
 
@@ -334,6 +360,23 @@ See [LICENSE](LICENSE) file for details.
 
 ## Release Notes
 
+### v1.1.1 (2026-01-04)
+
+**🔧 Improvements:**
+- ✨ **Intelligent Receiver NTP Sync**: Implemented adaptive NTP synchronization strategy
+  - Automatic sync on keyframes for high accuracy
+  - Drift detection with 50ms threshold to prevent clock drift
+  - Significantly improved long-running stability
+- 📝 **Enhanced Documentation**: Added detailed NTP synchronization strategy documentation
+
+**Technical Details:**
+- Receiver now syncs NTP time on every keyframe
+- Additional sync triggered when time drift exceeds 50ms
+- Eliminated the "sync once on startup" limitation
+- Better handling of long-running streams
+
+---
+
 ### v1.1.0 (2026-01-04)
 
 **🎉 New Features:**
@@ -364,6 +407,6 @@ See [LICENSE](LICENSE) file for details.
 
 ---
 
-**Current Version**: 1.1.0  
+**Current Version**: 1.1.1  
 **Last Updated**: 2026-01-04
 

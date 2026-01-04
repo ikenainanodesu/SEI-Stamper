@@ -75,10 +75,11 @@ typedef struct sei_receiver_source {
   bool hw_decode_enabled;   /* 硬件解码是否启用 */
 
   /* NTP同步 */
-  ntp_client_t ntp_client; /* NTP客户端 */
-  bool ntp_enabled;        /* NTP是否启用 */
-  char ntp_server[128];    /* NTP服务器地址 */
-  uint16_t ntp_port;       /* NTP服务器端口 */
+  ntp_client_t ntp_client;     /* NTP客户端 */
+  bool ntp_enabled;            /* NTP是否启用 */
+  char ntp_server[128];        /* NTP服务器地址 */
+  uint16_t ntp_port;           /* NTP服务器端口 */
+  uint64_t last_ntp_sync_time; /* 上次NTP同步的本地时间(纳秒) */
 
   /* 帧同步 */
   frame_buffer_t frame_buffer; /* 帧缓冲区 */
