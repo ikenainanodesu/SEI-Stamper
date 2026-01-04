@@ -1,0 +1,105 @@
+# Build output directories
+build/
+out/
+bin/
+lib/
+
+# IDE and editor files
+.vs/
+.vscode/
+*.code-workspace
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.VC.opendb
+
+# Visual Studio temporary files
+*.Cache
+*.ipch
+*.aps
+*.ncb
+*.opendb
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+*.cmake
+!CMakeLists.txt
+!cmake/
+
+# Build artifacts
+*.dll
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.iobj
+*.ipdb
+
+# Log files
+*.log
+*.txt
+!CMakeLists.txt
+!README*.txt
+
+# Third-party source code (keep as submodules or external dependencies)
+obs-studio-master/
+obs/
+srt/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Windows specific
+desktop.ini
+$RECYCLE.BIN/
+
+# Package manager
+node_modules/
+*.nuget/
+packages/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Distribution / Release
+dist/
+release/
+*.zip
+*.tar.gz
+*.rar
+
+# Debug files
+*.dmp
+*.stackdump
+
+# Compiled locale files (keep source .ini files in data/locale/)
+# *.mo
+# *.pot
+
+# AI Assistant / Agent files
+.agent/
+.gemini/
+*.brain/
+
+# Keep important files
+!.gitignore
+!README.md
+!LICENSE
