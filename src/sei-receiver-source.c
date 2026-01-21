@@ -774,6 +774,8 @@ static void *receiver_source_create(obs_data_t *settings,
     ctx->hw_decode_enabled = false;
   }
 
+  /* codec_type已移除 - 接收端自动检测流的编码格式 */
+
   const char *ntp_server = obs_data_get_string(settings, "ntp_server");
   if (ntp_server && ntp_server[0]) {
     strncpy(ctx->ntp_server, ntp_server, sizeof(ctx->ntp_server) - 1);
@@ -878,6 +880,7 @@ static void receiver_source_defaults(obs_data_t *settings) {
   obs_data_set_default_int(settings, "ntp_port", 123);
   obs_data_set_default_bool(settings, "ntp_enabled", true);
   obs_data_set_default_string(settings, "hw_decoder", "none");
+  /* codec_type已移除 - 自动检测 */
   obs_data_set_default_int(settings, "ntp_drift_threshold", 50); // 默认 50ms
   obs_data_set_default_int(settings, "ntp_sync_interval",
                            10000); // 默认 10000ms (10秒)
@@ -905,6 +908,8 @@ static obs_properties_t *receiver_source_properties(void *data) {
                                "nvdec");
   obs_property_list_add_string(hw_list, obs_module_text("HWDecoder.AMF"),
                                "amf");
+
+  /* Codec Format已移除 - 接收端自动检测流的编码格式 */
 
   /* NTP设置组 */
   obs_properties_add_group(props, "ntp_group", obs_module_text("NTPSettings"),
@@ -1001,6 +1006,8 @@ static void receiver_source_update(void *data, obs_data_t *settings) {
     settings_changed = true;
   }
 
+  /* codec_type检测已移除 - 自动检测 */
+
   /* 如果因为设置改变而停止了，现在重新启动 */
   if (settings_changed) {
     start_receiver(ctx);
@@ -1087,10 +1094,17 @@ static bool try_connect(sei_receiver_source_t *source) {
     init_hw_device(source);
   }
 
+  /* 自动检测流的编码格式（从流中读取，而非用户选择） */
+  enum AVCodecID codec_id = vstream->codecpar->codec_id;
+  const char *codec_name = avcodec_get_name(codec_id);
+  receiver_log(LOG_INFO, source, "Auto-detected codec: %s (ID: %d)", codec_name,
+               codec_id);
+
   /* 初始化视频解码器 */
-  const AVCodec *codec = avcodec_find_decoder(vstream->codecpar->codec_id);
+  const AVCodec *codec = avcodec_find_decoder(codec_id);
   if (!codec) {
-    receiver_log(LOG_ERROR, source, "Video decoder not found");
+    receiver_log(LOG_ERROR, source, "Video decoder not found for codec: %s",
+                 codec_name);
     avformat_close_input(&fmt_ctx);
     return false;
   }

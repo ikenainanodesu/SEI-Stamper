@@ -118,8 +118,9 @@ void amd_encoder_destroy(amd_encoder_t *enc) {
   bfree(enc);
 }
 
-/* 创建编码器 */
-static void *amd_create(obs_data_t *settings, obs_encoder_t *encoder) {
+/* 创建编码器 - Internal (public for unified encoder) */
+void *amd_encoder_create_internal(obs_data_t *settings,
+                                  obs_encoder_t *encoder) {
   amd_encoder_t *enc = bzalloc(sizeof(amd_encoder_t));
   enc->encoder = encoder;
 
@@ -137,6 +138,27 @@ static void *amd_create(obs_data_t *settings, obs_encoder_t *encoder) {
   enc->preset = bstrdup(obs_data_get_string(settings, "preset"));
   enc->profile = bstrdup(obs_data_get_string(settings, "profile"));
 
+  /* Codec Type */
+  enc->codec_type = (int)obs_data_get_int(settings, "codec_type");
+  if (enc->codec_type < 0 || enc->codec_type > 2)
+    enc->codec_type = 0; // Default to H.264
+
+  /* 根据 codec_type 设置编码器名称 */
+  switch (enc->codec_type) {
+  case 0: // H.264
+    snprintf(enc->codec_name, sizeof(enc->codec_name), "h264_amf");
+    break;
+  case 1: // H.265
+    snprintf(enc->codec_name, sizeof(enc->codec_name), "hevc_amf");
+    break;
+  case 2: // AV1
+    snprintf(enc->codec_name, sizeof(enc->codec_name), "av1_amf");
+    break;
+  default:
+    snprintf(enc->codec_name, sizeof(enc->codec_name), "h264_amf");
+    break;
+  }
+
   /* NTP 初始化 */
   const char *ntp_server = obs_data_get_string(settings, "ntp_server");
   ntp_client_init(&enc->ntp_client, ntp_server, 123);
@@ -146,12 +168,13 @@ static void *amd_create(obs_data_t *settings, obs_encoder_t *encoder) {
   if (enc->ntp_sync_interval_ms == 0)
     enc->ntp_sync_interval_ms = 60000; // 默认 60 秒
 
-  encoder_log(LOG_INFO, enc, "Creating AMD AMF encoder");
+  encoder_log(LOG_INFO, enc, "Creating AMD AMF encoder: %s", enc->codec_name);
 
   /* 查找 FFmpeg AMF 编码器 */
-  enc->codec = avcodec_find_encoder_by_name("h264_amf");
+  enc->codec = avcodec_find_encoder_by_name(enc->codec_name);
   if (!enc->codec) {
-    encoder_log(LOG_ERROR, enc, "AMD AMF encoder not found (h264_amf)");
+    encoder_log(LOG_ERROR, enc, "AMD AMF encoder not found (%s)",
+                enc->codec_name);
     encoder_log(LOG_ERROR, enc,
                 "Make sure FFmpeg is built with AMF support and AMD GPU "
                 "drivers are installed");
@@ -230,9 +253,10 @@ static void *amd_create(obs_data_t *settings, obs_encoder_t *encoder) {
   return enc;
 }
 
-/* 编码函数 */
-static bool amd_encode(void *data, struct encoder_frame *frame,
-                       struct encoder_packet *packet, bool *received_packet) {
+/* 编码函数 - Internal (public for unified encoder) */
+bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
+                                 struct encoder_packet *packet,
+                                 bool *received_packet) {
   amd_encoder_t *enc = data;
   char errbuf[128];
 
@@ -381,19 +405,39 @@ static const char *amd_get_name(void *type_data) {
   return "SEI Stamper (AMD AMF)";
 }
 
-/* 获取视频信息 */
-static void amd_get_video_info(void *data, struct video_scale_info *info) {
+/* 获取视频信息 - Internal (public for unified encoder) */
+void amd_encoder_get_video_info_internal(void *data,
+                                         struct video_scale_info *info) {
   info->format = VIDEO_FORMAT_NV12;
 }
 
-/* 获取 Extra Data */
-static bool amd_get_extra_data(void *data, uint8_t **extra_data, size_t *size) {
+/* 获取 Extra Data - Internal (public for unified encoder) */
+bool amd_encoder_get_extra_data_internal(void *data, uint8_t **extra_data,
+                                         size_t *size) {
   amd_encoder_t *enc = (amd_encoder_t *)data;
   if (!enc || !enc->extra_data)
     return false;
   *extra_data = enc->extra_data;
   *size = enc->extra_data_size;
   return true;
+}
+
+/* Static wrappers for obs_encoder_info */
+static void *amd_create(obs_data_t *settings, obs_encoder_t *encoder) {
+  return amd_encoder_create_internal(settings, encoder);
+}
+
+static bool amd_encode(void *data, struct encoder_frame *frame,
+                       struct encoder_packet *packet, bool *received_packet) {
+  return amd_encoder_encode_internal(data, frame, packet, received_packet);
+}
+
+static void amd_get_video_info(void *data, struct video_scale_info *info) {
+  amd_encoder_get_video_info_internal(data, info);
+}
+
+static bool amd_get_extra_data(void *data, uint8_t **extra_data, size_t *size) {
+  return amd_encoder_get_extra_data_internal(data, extra_data, size);
 }
 
 /* 编码器 Info 结构体 */

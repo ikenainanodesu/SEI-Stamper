@@ -29,6 +29,10 @@ typedef struct nvenc_encoder {
   char *profile;
   char *preset;
 
+  /* Codec Type */
+  int codec_type;      /* 0=H.264, 1=H.265, 2=AV1 */
+  char codec_name[32]; /* FFmpeg encoder name */
+
   /* Extra Data (SPS/PPS) */
   uint8_t *extra_data;
   size_t extra_data_size;
@@ -41,10 +45,20 @@ typedef struct nvenc_encoder {
   uint32_t ntp_sync_interval_ms; /* NTP同步间隔（毫秒） */
 
   /* Packet 缓冲区 */
-  uint8_t *packet_buffer;
-  size_t packet_buffer_size;
-
+  uint8_t *packet_buffer;    // 临时packet缓冲区
+  size_t packet_buffer_size; // packet缓冲区大小
 } nvenc_encoder_t;
+
+/* Public API functions for unified encoder */
+void *nvenc_encoder_create_internal(obs_data_t *settings,
+                                    obs_encoder_t *encoder);
+bool nvenc_encoder_encode_internal(void *data, struct encoder_frame *frame,
+                                   struct encoder_packet *packet,
+                                   bool *received_packet);
+void nvenc_encoder_get_video_info_internal(void *data,
+                                           struct video_scale_info *info);
+bool nvenc_encoder_get_extra_data_internal(void *data, uint8_t **extra_data,
+                                           size_t *size);
 
 bool nvenc_encoder_init(nvenc_encoder_t *enc, obs_data_t *settings,
                         video_t *video);

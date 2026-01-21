@@ -42,6 +42,7 @@ set(PLUGIN_SOURCES
     src/ntp-client.c
     src/sei-handler.c
     src/sei-stamper-encoder.c
+    src/unified-encoder.c      # Unified Encoder Wrapper
     src/qsv-encoder.c          # Intel VPL Encoder
     src/nvenc-encoder.c        # NVIDIA NVENC Encoder
     src/amd-encoder.c          # AMD AMF Encoder

@@ -29,6 +29,9 @@ typedef struct qsv_encoder {
   char *profile;
   char *preset;
 
+  /* Codec Type */
+  int codec_type; /* 0=H.264, 1=H.265, 2=AV1 */
+
   /* Surfaces */
   mfxFrameAllocResponse mfxResponse;
   mfxFrameSurface1 **pmfxSurfaces;
@@ -46,15 +49,27 @@ typedef struct qsv_encoder {
   size_t extra_data_size;
 
   /* NTP Synchronization */
-  struct ntp_client ntp_client; // struct ntp_client is typedef'd as
-                                // ntp_client_t but struct tag exists
-  // Actually safer to use ntp_client_t
-  uint64_t last_ntp_sync_time;
-  ntp_timestamp_t current_ntp_time;
-  bool ntp_enabled;
-  uint32_t ntp_sync_interval_ms; /* NTP同步间隔（毫秒），默认60000ms */
+  struct ntp_client ntp_client;     // NTP客户端
+  uint64_t last_ntp_sync_time;      // 上次NTP同步时间
+  ntp_timestamp_t current_ntp_time; // 当前编码帧的NTP时间戳
+  bool ntp_enabled;                 // NTP是否启用
+  uint32_t ntp_sync_interval_ms;    /* NTP同步间隔（毫秒）*/
 
 } qsv_encoder_t;
+
+/* Public API functions for unified encoder */
+void *qsv_encoder_create_internal(obs_data_t *settings, obs_encoder_t *encoder);
+void qsv_encoder_destroy_internal(void *data);
+bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
+                                 struct encoder_packet *packet,
+                                 bool *received_packet);
+void qsv_encoder_get_video_info_internal(void *data,
+                                         struct video_scale_info *info);
+bool qsv_encoder_get_extra_data_internal(void *data, uint8_t **extra_data,
+                                         size_t *size);
+
+/* OBS encoder info structure */
+extern struct obs_encoder_info qsv_encoder_info;
 
 bool qsv_encoder_init(qsv_encoder_t *enc, obs_data_t *settings, video_t *video);
 void qsv_encoder_destroy(qsv_encoder_t *enc);

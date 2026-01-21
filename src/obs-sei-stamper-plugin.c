@@ -28,52 +28,31 @@ MODULE_EXPORT const char *obs_module_description(void) {
 // 模块名称
 MODULE_EXPORT const char *obs_module_name(void) { return "OBS SEI Stamper"; }
 
-// 前向声明 - 编码器
-extern struct obs_encoder_info sei_stamper_h264_encoder_info;
-extern struct obs_encoder_info sei_stamper_h265_encoder_info;
-extern struct obs_encoder_info sei_stamper_av1_encoder_info;
+// 前向声明 - 统一编码器（三个独立的codec版本）
+extern struct obs_encoder_info unified_encoder_info_h264;
+extern struct obs_encoder_info unified_encoder_info_h265;
+extern struct obs_encoder_info unified_encoder_info_av1;
 
 // 前向声明 - 源
 extern struct obs_source_info sei_receiver_source_info;
 
 // 模块加载
 bool obs_module_load(void) {
-  blog(LOG_INFO, "[SEI Stamper] Plugin loaded (version 1.0.0)");
-  blog(LOG_INFO,
-       "[SEI Stamper] Developed for frame-level video synchronization");
+  blog(LOG_INFO, "OBS SEI Stamper Plugin loaded");
 
-  // 注册编码器
-  obs_register_encoder(&sei_stamper_h264_encoder_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered H.264 encoder");
+  /* 注册三个独立的SEI Stamper编码器（每种codec一个） */
+  blog(LOG_INFO, "Registering SEI Stamper H.264 encoder");
+  obs_register_encoder(&unified_encoder_info_h264);
 
-#ifdef ENABLE_VPL
-  extern struct obs_encoder_info qsv_encoder_info;
-  obs_register_encoder(&qsv_encoder_info);
-  blog(LOG_INFO,
-       "[SEI Stamper] Registered Intel QuickSync (VPL Native) encoder");
-#endif
+  blog(LOG_INFO, "Registering SEI Stamper H.265 encoder");
+  obs_register_encoder(&unified_encoder_info_h265);
 
-#ifdef ENABLE_NVENC
-  extern struct obs_encoder_info nvenc_encoder_info;
-  obs_register_encoder(&nvenc_encoder_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered NVIDIA NVENC encoder");
-#endif
+  blog(LOG_INFO, "Registering SEI Stamper AV1 encoder");
+  obs_register_encoder(&unified_encoder_info_av1);
 
-#ifdef ENABLE_AMD
-  extern struct obs_encoder_info amd_encoder_info;
-  obs_register_encoder(&amd_encoder_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered AMD AMF encoder");
-#endif
-
-  obs_register_encoder(&sei_stamper_h265_encoder_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered H.265/HEVC encoder");
-
-  obs_register_encoder(&sei_stamper_av1_encoder_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered AV1 encoder");
-
-  // 注册源
+  /* 注册SEI接收器源 */
+  blog(LOG_INFO, "Registering SEI Receiver source");
   obs_register_source(&sei_receiver_source_info);
-  blog(LOG_INFO, "[SEI Stamper] Registered SEI Receiver source");
 
   return true;
 }

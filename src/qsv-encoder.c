@@ -175,8 +175,9 @@ static bool init_vpl_session(qsv_encoder_t *enc) {
   return true;
 }
 
-/* Create */
-static void *qsv_create(obs_data_t *settings, obs_encoder_t *encoder) {
+/* Create - Internal (public for unified encoder) */
+void *qsv_encoder_create_internal(obs_data_t *settings,
+                                  obs_encoder_t *encoder) {
   qsv_encoder_t *enc = bzalloc(sizeof(qsv_encoder_t));
   enc->encoder = encoder;
 
@@ -192,7 +193,11 @@ static void *qsv_create(obs_data_t *settings, obs_encoder_t *encoder) {
                 enc->fps_den;
   enc->bframes = (int)obs_data_get_int(settings, "bframes");
 
-  /* NTP Init */
+  /* Codec Type */
+  enc->codec_type = (int)obs_data_get_int(settings, "codec_type");
+  if (enc->codec_type < 0 || enc->codec_type > 2)
+    enc->codec_type = 0; // Default to H.264
+
   /* NTP Init */
   const char *ntp_server = obs_data_get_string(settings, "ntp_server");
   ntp_client_init(&enc->ntp_client, ntp_server, 123);
@@ -209,7 +214,27 @@ static void *qsv_create(obs_data_t *settings, obs_encoder_t *encoder) {
 
   /* Configure Encoder */
   memset(&enc->mfxParams, 0, sizeof(enc->mfxParams));
-  enc->mfxParams.mfx.CodecId = MFX_CODEC_AVC;
+
+  /* Set CodecId based on codec_type */
+  switch (enc->codec_type) {
+  case 0: // H.264
+    enc->mfxParams.mfx.CodecId = MFX_CODEC_AVC;
+    blog(LOG_INFO, "[QSV Native] Using H.264 (AVC) codec");
+    break;
+  case 1: // H.265
+    enc->mfxParams.mfx.CodecId = MFX_CODEC_HEVC;
+    blog(LOG_INFO, "[QSV Native] Using H.265 (HEVC) codec");
+    break;
+  case 2: // AV1
+    enc->mfxParams.mfx.CodecId = MFX_CODEC_AV1;
+    blog(LOG_INFO, "[QSV Native] Using AV1 codec");
+    break;
+  default:
+    enc->mfxParams.mfx.CodecId = MFX_CODEC_AVC;
+    blog(LOG_WARNING, "[QSV Native] Unknown codec type %d, defaulting to H.264",
+         enc->codec_type);
+    break;
+  }
   enc->mfxParams.mfx.TargetUsage = MFX_TARGETUSAGE_BALANCED; // Defaults
   enc->mfxParams.mfx.TargetKbps = enc->bitrate;
   enc->mfxParams.mfx.RateControlMethod = MFX_RATECONTROL_CBR;
@@ -365,8 +390,9 @@ static void *qsv_create(obs_data_t *settings, obs_encoder_t *encoder) {
   return enc;
 }
 
-static bool qsv_encode(void *data, struct encoder_frame *frame,
-                       struct encoder_packet *packet, bool *received_packet) {
+bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
+                                 struct encoder_packet *packet,
+                                 bool *received_packet) {
   qsv_encoder_t *enc = data;
 
   /* Find Free Surface */
@@ -542,17 +568,39 @@ static const char *qsv_get_name(void *type_data) {
   return "SEI Stamper (Intel QuickSync)";
 }
 
-static void qsv_get_video_info(void *data, struct video_scale_info *info) {
+void qsv_encoder_get_video_info_internal(void *data,
+                                         struct video_scale_info *info) {
   info->format = VIDEO_FORMAT_NV12;
 }
 
-static bool qsv_get_extra_data(void *data, uint8_t **extra_data, size_t *size) {
+bool qsv_encoder_get_extra_data_internal(void *data, uint8_t **extra_data,
+                                         size_t *size) {
   qsv_encoder_t *enc = (qsv_encoder_t *)data;
   if (!enc || !enc->extra_data)
     return false;
   *extra_data = enc->extra_data;
   *size = enc->extra_data_size;
   return true;
+}
+
+/* Static wrappers for obs_encoder_info */
+static void *qsv_create(obs_data_t *settings, obs_encoder_t *encoder) {
+  return qsv_encoder_create_internal(settings, encoder);
+}
+
+static void qsv_destroy(void *data) { qsv_encoder_destroy(data); }
+
+static bool qsv_encode(void *data, struct encoder_frame *frame,
+                       struct encoder_packet *packet, bool *received_packet) {
+  return qsv_encoder_encode_internal(data, frame, packet, received_packet);
+}
+
+static void qsv_get_video_info(void *data, struct video_scale_info *info) {
+  qsv_encoder_get_video_info_internal(data, info);
+}
+
+static bool qsv_get_extra_data(void *data, uint8_t **extra_data, size_t *size) {
+  return qsv_encoder_get_extra_data_internal(data, extra_data, size);
 }
 
 struct obs_encoder_info qsv_encoder_info = {
