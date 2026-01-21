@@ -53,8 +53,7 @@ typedef struct sei_receiver_source {
   obs_source_t *context; /* OBS源上下文 */
 
   /* SRT连接 */
-  char srt_url[256];           /* SRT服务器URL */
-  char srt_streamid[256];      /* Stream ID (for SLS) */
+  char srt_url[256];           /* SRT服务器URL (可包含?streamid=xxx等参数) */
   bool is_connected;           /* 是否已连接 */
   pthread_t receive_thread;    /* 接收线程 */
   volatile bool thread_active; /* 线程活动标志 */

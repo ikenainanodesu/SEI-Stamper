@@ -764,12 +764,6 @@ static void *receiver_source_create(obs_data_t *settings,
     strncpy(ctx->srt_url, srt_url, sizeof(ctx->srt_url) - 1);
   }
 
-  /* SLS Stream ID */
-  const char *srt_streamid = obs_data_get_string(settings, "srt_streamid");
-  if (srt_streamid && srt_streamid[0]) {
-    strncpy(ctx->srt_streamid, srt_streamid, sizeof(ctx->srt_streamid) - 1);
-  }
-
   /* 硬件解码器设置 */
   const char *hw_decoder = obs_data_get_string(settings, "hw_decoder");
   if (hw_decoder && hw_decoder[0]) {
@@ -880,7 +874,6 @@ static void receiver_source_destroy(void *data) {
 /* 获取默认设置 */
 static void receiver_source_defaults(obs_data_t *settings) {
   obs_data_set_default_string(settings, "srt_url", "srt://127.0.0.1:9000");
-  obs_data_set_default_string(settings, "srt_streamid", "");
   obs_data_set_default_string(settings, "ntp_server", "time.windows.com");
   obs_data_set_default_int(settings, "ntp_port", 123);
   obs_data_set_default_bool(settings, "ntp_enabled", true);
@@ -898,10 +891,6 @@ static obs_properties_t *receiver_source_properties(void *data) {
 
   /* SRT URL */
   obs_properties_add_text(props, "srt_url", obs_module_text("SRTUrl"),
-                          OBS_TEXT_DEFAULT);
-
-  /* Stream ID (SLS) */
-  obs_properties_add_text(props, "srt_streamid", obs_module_text("SRTStreamID"),
                           OBS_TEXT_DEFAULT);
 
   /* 硬件解码器选择 */
@@ -987,6 +976,31 @@ static void receiver_source_update(void *data, obs_data_t *settings) {
     }
   }
 
+  /* 更新硬件解码器设置 */
+  const char *hw_decoder = obs_data_get_string(settings, "hw_decoder");
+  if (hw_decoder && hw_decoder[0] &&
+      strcmp(ctx->hw_decoder_type, hw_decoder) != 0) {
+    /* 如果硬件解码器类型改变，需要重启接收器 */
+    receiver_log(LOG_INFO, ctx,
+                 "Hardware decoder changed from '%s' to '%s', restarting...",
+                 ctx->hw_decoder_type, hw_decoder);
+
+    /* 释放旧的硬件设备上下文(如果存在) */
+    if (ctx->hw_device_ctx) {
+      av_buffer_unref((AVBufferRef **)&ctx->hw_device_ctx);
+      ctx->hw_device_ctx = NULL;
+    }
+
+    /* 停止接收器 */
+    stop_receiver(ctx);
+
+    /* 更新配置 */
+    strncpy(ctx->hw_decoder_type, hw_decoder, sizeof(ctx->hw_decoder_type) - 1);
+    ctx->hw_decode_enabled = (strcmp(hw_decoder, "none") != 0);
+
+    settings_changed = true;
+  }
+
   /* 如果因为设置改变而停止了，现在重新启动 */
   if (settings_changed) {
     start_receiver(ctx);
@@ -1032,17 +1046,8 @@ static bool try_connect(sei_receiver_source_t *source) {
   AVDictionary *options = NULL;
   av_dict_set(&options, "timeout", "2000000", 0); /* 2秒超时 */
 
-  /* 构建完整URL (支持SLS streamid) */
-  char full_url[1024];
-  if (source->srt_streamid[0]) {
-    snprintf(full_url, sizeof(full_url), "%s?streamid=%s", source->srt_url,
-             source->srt_streamid);
-    receiver_log(LOG_INFO, source, "Using Stream ID: %s", source->srt_streamid);
-  } else {
-    strncpy(full_url, source->srt_url, sizeof(full_url) - 1);
-  }
-
-  if (avformat_open_input(&fmt_ctx, full_url, NULL, &options) < 0) {
+  /* 直接使用配置的SRT URL (用户可以在URL中包含 ?streamid=xxx 等参数) */
+  if (avformat_open_input(&fmt_ctx, source->srt_url, NULL, &options) < 0) {
     receiver_log(LOG_WARNING, source,
                  "Failed to open input (sender might be offline)");
     avformat_free_context(fmt_ctx);
