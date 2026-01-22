@@ -1,4 +1,4 @@
-# OBS SEI Stamper プラグイン
+# SEI Stamper プラグイン
 
 <img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
 
@@ -13,7 +13,7 @@
 
 ### 概要
 
-OBS SEI Stamperは、SEI（補足拡張情報）を使用してビデオストリームにNTPタイムスタンプを埋め込むことで、複数のストリーム間で**フレームレベルのビデオ同期**を実現するOBS Studioプラグインです。
+SEI Stamperは、SEI（補足拡張情報）を使用してビデオストリームにNTPタイムスタンプを埋め込むことで、複数のストリーム間で**フレームレベルのビデオ同期**を実現するOBS Studioプラグインです。
 
 **主な機能：**
 - 🎯 **フレーム精度の同期** - NTPタイムスタンプを使用

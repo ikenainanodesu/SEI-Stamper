@@ -1,4 +1,4 @@
-# OBS SEI Stamper 插件
+# SEI Stamper 插件
 
 <img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
 
@@ -12,7 +12,7 @@
 
 ### 概述
 
-OBS SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间戳的 SEI（补充增强信息）来实现**帧级别的视频同步**。
+SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间戳的 SEI（补充增强信息）来实现**帧级别的视频同步**。
 
 **主要特性：**
 - 🎯 **帧精确同步** - 使用 NTP 时间戳

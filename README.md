@@ -1,4 +1,4 @@
-# OBS SEI Stamper Plugin
+# SEI Stamper Plugin
 
 <img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
 
@@ -13,7 +13,7 @@
 
 ### Overview
 
-OBS SEI Stamper is an OBS Studio plugin that enables **frame-level video synchronization** across multiple streams by embedding NTP timestamps into video streams using SEI (Supplemental Enhancement Information).
+SEI Stamper is an OBS Studio plugin that enables **frame-level video synchronization** across multiple streams by embedding NTP timestamps into video streams using SEI (Supplemental Enhancement Information).
 
 **Key Features:**
 - 🎯 **Frame-accurate synchronization** using NTP timestamps
