@@ -52,7 +52,7 @@ The release package includes:
 
 ### Prerequisites
 
-- OBS Studio 28.0 or later
+- OBS Studio 32.0.4 or later
 - Windows 10/11 (64-bit)
 
 ### Manual Install Steps

@@ -51,7 +51,7 @@ SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间
 
 ### 系统要求
 
-- OBS Studio 28.0 或更高版本
+- OBS Studio 32.0.4 或更高版本
 - Windows 10/11 (64位)
 
 ### 手动安装步骤
@@ -273,7 +273,7 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 **解决方案：**
 - 确认插件 DLL 在 `obs-plugins/64bit/` 目录
 - 检查 OBS 日志查看加载错误
-- 确保 OBS 版本为 28.0+
+- 确保 OBS 版本为 32.0.4+
 
 ### 问题：接收端无法连接 SRT
 

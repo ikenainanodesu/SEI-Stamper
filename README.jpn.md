@@ -52,7 +52,7 @@ SEI Stamperは、SEI（補足拡張情報）を使用してビデオストリー
 
 ### 必要条件
 
-- OBS Studio 28.0以降
+- OBS Studio 32.0.4以降
 - Windows 10/11 (64ビット)
 
 ### 手動インストール手順
@@ -276,7 +276,7 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 **解決策：**
 - プラグインDLLが`obs-plugins/64bit/`ディレクトリにあることを確認
 - OBSログで読み込みエラーを確認
-- OBSバージョンが28.0以降であることを確認
+- OBSバージョンが32.0.4以降であることを確認
 
 ### 問題：受信機がSRTに接続できない
 
