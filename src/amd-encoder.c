@@ -208,6 +208,29 @@ void amd_encoder_destroy(amd_encoder_t *enc) {
   bfree(enc);
 }
 
+/*
+ * Resolve the codec-appropriate profile string for FFmpeg's *_amf encoders.
+ * The unified-encoder UI exposes H.264 profile names (baseline/main/high) for
+ * all codecs, but hevc_amf accepts only "main" and av1_amf only "main".
+ * Passing "high" to hevc_amf returns EINVAL from avcodec_open2, so H.265 never
+ * opens. Coerce unrecognised values to a sensible per-codec default.
+ *
+ * codec_type: 0 = H.264, 1 = H.265, 2 = AV1.
+ * Returns NULL to mean "do not set the profile option".
+ */
+static const char *amd_resolve_profile(int codec_type, const char *in) {
+  if (codec_type == 0) { /* h264_amf: baseline/main/high/constrained_* */
+    if (!in || !*in)
+      return "high";
+    return in;
+  }
+  if (codec_type == 1) /* hevc_amf: main only */
+    return "main";
+  if (codec_type == 2) /* av1_amf: main */
+    return "main";
+  return NULL;
+}
+
 /* 创建编码器 - Internal (public for unified encoder) */
 void *amd_encoder_create_internal(obs_data_t *settings,
                                   obs_encoder_t *encoder) {
@@ -299,9 +322,14 @@ void *amd_encoder_create_internal(obs_data_t *settings,
     encoder_log(LOG_INFO, enc, "Using quality preset: %s", enc->preset);
   }
 
-  /* Profile */
-  if (enc->profile && strlen(enc->profile) > 0) {
-    av_dict_set(&opts, "profile", enc->profile, 0);
+  /* Profile (coerce to codec-valid value - the UI exposes H.264 names for all
+   * codecs, but hevc_amf/av1_amf reject "high" with EINVAL). */
+  const char *amf_profile = amd_resolve_profile(enc->codec_type, enc->profile);
+  if (amf_profile) {
+    av_dict_set(&opts, "profile", amf_profile, 0);
+    encoder_log(LOG_INFO, enc, "Using AMF profile: %s (requested: %s)",
+                amf_profile,
+                (enc->profile && *enc->profile) ? enc->profile : "(default)");
   }
 
   /* Rate control - CBR */

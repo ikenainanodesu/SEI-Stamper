@@ -33,9 +33,16 @@ typedef struct nvenc_encoder {
   int codec_type;      /* 0=H.264, 1=H.265, 2=AV1 */
   char codec_name[32]; /* FFmpeg encoder name */
 
-  /* Extra Data (SPS/PPS) */
+  /* Extra Data (SPS/PPS) returned to OBS via get_extra_data */
   uint8_t *extra_data;
   size_t extra_data_size;
+
+  /* Inline parameter sets in Annex-B form, prepended to each H.264 keyframe
+   * packet when AV_CODEC_FLAG_GLOBAL_HEADER is set (so FFmpeg no longer
+   * emits SPS/PPS inline). Keeps MPEG-TS/SRT consumers happy while letting
+   * RTMP/FLV consumers use the AVC sequence header from extra_data. */
+  uint8_t *inline_params;
+  size_t inline_params_size;
 
   /* NTP 同步 */
   struct ntp_client ntp_client;
