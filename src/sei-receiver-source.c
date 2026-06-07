@@ -990,7 +990,7 @@ static obs_properties_t *receiver_source_properties(void *data) {
                           OBS_TEXT_INFO);
 
   /* 版本信息 */
-  obs_properties_add_text(props, "plugin_version", "v1.2.2",
+  obs_properties_add_text(props, "plugin_version", "v1.2.3-beta",
                           OBS_TEXT_INFO);
 
   return props;

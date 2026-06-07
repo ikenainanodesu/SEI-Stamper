@@ -454,7 +454,7 @@ void *nvenc_encoder_create_internal(obs_data_t *settings,
    *     → recording hangs at stop and SLS/SRT distribution fails (frames only
    *     reach P2P listeners that happened to catch an in-band header).
    * We re-inject SPS/PPS (and VPS for HEVC) inline at each keyframe below,
-   * preserving the v1.2.2 in-band-parameter-set behaviour for MPEG-TS/SRT
+   * preserving the v1.2.2+ in-band-parameter-set behaviour for MPEG-TS/SRT
    * receivers that join mid-stream. AV1 is left untouched. */
   if (enc->codec_type == 0 || enc->codec_type == 1) {
     enc->codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;

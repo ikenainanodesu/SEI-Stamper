@@ -17,6 +17,7 @@ SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间
 **主要特性：**
 - 🎯 **帧精确同步** - 使用 NTP 时间戳
 - 📡 **多种硬件编码器** - Intel QuickSync、NVIDIA NVENC、AMD AMF
+- 🛠️ **NVENC/AMF 视频帧传输修复** - 最新代码已恢复 NVIDIA NVENC 与 AMD AMF 在 H.264/H.265 下的视频帧输出
 - 🎞️ **多编码格式支持** - 支持 **H.264** 和 **H.265 (HEVC)**
 - 🚀 **GPU 加速** - 支持 SEI 的硬件加速编码
 - 🔄 **完整方案** - 包含发送端和接收端
@@ -52,6 +53,7 @@ SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间
 ### 系统要求
 
 - OBS Studio 32.0.4 或更高版本
+- 最新验证构建环境：OBS Studio 32.1.2
 - Windows 10/11 (64位)
 
 ### 手动安装步骤
@@ -94,6 +96,9 @@ SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间
    - Intel QuickSync
    - NVIDIA NVENC
    - AMD AMF
+
+> **NVENC/AMF 状态**：最新代码已包含 PR #6 的修复，解决了 NVIDIA NVENC 与 AMD AMF 在 H.264/H.265 下可能无法向推流输出传输视频帧的问题。如果您从旧发布包升级后仍遇到只有音频或没有视频帧的情况，请重新构建或安装包含该修复的版本。
+
 4. 配置编码器属性：
    - **NTP 服务器**：`time.windows.com`（或您的 NTP 服务器）
    - **NTP 端口**：`123`（默认）
@@ -196,8 +201,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 | 编码器名称 | 编码格式 | 支持硬件 | 状态 |
 |----------|---------|---------|------|
-| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ 已验证 |
-| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ⚠️ (对SLS支持有限)|
+| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ 已验证；NVENC/AMF 视频帧传输已修复 |
+| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ✅ 点对点已验证；NVENC/AMF 视频帧传输已修复；⚠️ 对 SLS 支持有限 |
 
 ---
 
@@ -338,6 +343,14 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 
 ## 版本更新记录
 
+### v1.2.3-beta (2026-06-07)
+
+**🔧 修复与验证:**
+- ✅ **修复 NVENC/AMF 视频帧传输问题**: 解决 NVIDIA NVENC 与 AMD AMF 的 H.264/H.265 编码器在推流输出中可能无法传输视频帧的问题。
+- 🛠️ **NVENC 兼容性改进**: 将 NVENC preset 规整到现代 `p1`-`p7` 系列，修正不同编码格式下的 profile 处理，恢复 RTMP/录制所需的容器头，并在 MPEG-TS/SRT 关键帧中继续保留 SPS/PPS/VPS 带内参数集。
+- 🛠️ **AMF 兼容性改进**: 增加按编码格式处理 AMF profile 的逻辑，避免 H.265 继承 `high` 等无效的 H.264 profile 名称。
+- ✅ **构建验证**: 已确认可使用 OBS Studio **32.1.2** 依赖完成本地 Release 构建。
+
 ### v1.2.2 (2026-03-26)
 
 **✨ 更新与文档:**
@@ -395,5 +408,5 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 
 ---
 
-**当前版本**：1.2.2  
-**最后更新**：2026-03-26
+**当前版本**：1.2.3-beta
+**最后更新**：2026-06-07

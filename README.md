@@ -18,6 +18,7 @@ SEI Stamper is an OBS Studio plugin that enables **frame-level video synchroniza
 **Key Features:**
 - 🎯 **Frame-accurate synchronization** using NTP timestamps
 - 📡 **Multiple hardware encoders**: Intel QuickSync, NVIDIA NVENC, AMD AMF
+- 🛠️ **NVENC/AMF frame transport fix**: H.264/H.265 video frame output is restored for NVIDIA NVENC and AMD AMF in the latest code
 - 🎞️ **Multi-Codec Support**: **H.264** and **H.265 (HEVC)**
 - 🚀 **GPU acceleration**: Hardware-accelerated encoding with SEI support
 - 🔄 **Sender & Receiver**: Complete solution for encoding and decoding
@@ -53,6 +54,7 @@ The release package includes:
 ### Prerequisites
 
 - OBS Studio 32.0.4 or later
+- Latest validated build environment: OBS Studio 32.1.2
 - Windows 10/11 (64-bit)
 
 ### Manual Install Steps
@@ -95,6 +97,9 @@ The release package includes:
    - Intel QuickSync
    - NVIDIA NVENC
    - AMD AMF
+
+> **NVENC/AMF status**: The latest code includes the PR #6 fixes for NVIDIA NVENC and AMD AMF H.264/H.265 video frame transmission. If you are upgrading from an older package and see audio-only output or missing video frames, rebuild or install a release that includes this fix.
+
 4. Configure encoder properties:
    - **NTP Server**: `time.windows.com` (or your preferred NTP server)
    - **Enable NTP Sync**: ✓
@@ -178,8 +183,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 | Encoder Name | Codec | Supported Hardware | Status |
 |--------------|-------|--------------------|--------|
-| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ Verified |
-| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ⚠️ (Limited SLS Support)|
+| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ Verified; NVENC/AMF frame transport fixed |
+| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ✅ P2P verified; NVENC/AMF frame transport fixed; ⚠️ limited SLS support |
 
 ---
 
@@ -200,6 +205,14 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 ## Release Notes
+
+### v1.2.3-beta (2026-06-07)
+
+**🔧 Fixes & Validation:**
+- ✅ **NVENC/AMF video frame transmission fixed**: Resolved the issue where NVIDIA NVENC and AMD AMF H.264/H.265 encoders could fail to deliver video frames to streaming outputs.
+- 🛠️ **NVENC compatibility**: Normalized NVENC presets to the modern `p1`-`p7` preset family, corrected codec-specific profile handling, restored container headers for RTMP/recording, and keeps SPS/PPS/VPS available inline for MPEG-TS/SRT keyframes.
+- 🛠️ **AMF compatibility**: Added codec-specific AMF profile handling so H.265 no longer inherits invalid H.264 profile names such as `high`.
+- ✅ **Build validation**: Confirmed local Release build against OBS Studio **32.1.2** dependencies.
 
 ### v1.2.2 (2026-03-26)
 
@@ -256,5 +269,5 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Current Version**: 1.2.2  
-**Last Updated**: 2026-03-26
+**Current Version**: 1.2.3-beta
+**Last Updated**: 2026-06-07
