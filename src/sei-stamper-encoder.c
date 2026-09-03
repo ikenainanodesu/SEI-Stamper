@@ -11,12 +11,12 @@
 #include <util/dstr.h>
 #include <util/platform.h>
 
-/* 日志宏 */
+/* Logging macros */
 #define encoder_log(level, enc, format, ...)                                   \
   blog(level, "[SEI Stamper: '%s'] " format,                                   \
        obs_encoder_get_name(enc->context), ##__VA_ARGS__)
 
-/* 编码器名称 */
+/* Encoder names */
 static const char *h264_encoder_getname(void *unused) {
   UNUSED_PARAMETER(unused);
   return "SEI Stamper (H.264)";
@@ -32,7 +32,7 @@ static const char *av1_encoder_getname(void *unused) {
   return "SEI Stamper (AV1)";
 }
 
-/* 销毁编码器 */
+/* Destroy the encoder */
 static void sei_stamper_encoder_destroy(void *data) {
   struct sei_stamper_encoder *enc = data;
   if (!enc)
@@ -62,7 +62,7 @@ static void sei_stamper_encoder_destroy(void *data) {
   bfree(enc);
 }
 
-/* 创建编码器 */
+/* Create the encoder */
 static void *sei_stamper_encoder_create(obs_data_t *settings,
                                         obs_encoder_t *encoder,
                                         enum sei_stamper_codec_type type) {
@@ -70,7 +70,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
   enc->context = encoder;
   enc->codec_type = type;
 
-  /* 获取用户设置 */
+  /* Read the user settings */
   const char *codec_name = obs_data_get_string(settings, "codec_name");
   enc->bitrate = (int)obs_data_get_int(settings, "bitrate");
   enc->keyint_sec = (int)obs_data_get_int(settings, "keyint_sec");
@@ -100,7 +100,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
     }
   }
 
-  /* 查找FFmpeg编码器 */
+  /* Find the FFmpeg encoder */
   const AVCodec *codec = avcodec_find_encoder_by_name(codec_name);
   if (!codec) {
     encoder_log(LOG_ERROR, enc, "Encoder not found: %s", codec_name);
@@ -116,7 +116,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
     return NULL;
   }
 
-  /* 获取OBS视频参数 */
+  /* Get the OBS video parameters */
   video_t *video = obs_encoder_video(encoder);
   const struct video_output_info *voi = video_output_get_info(video);
 
@@ -126,7 +126,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
   enc->codec_context->framerate = (AVRational){voi->fps_num, voi->fps_den};
   enc->codec_context->pix_fmt = AV_PIX_FMT_NV12; /* Default to NV12 for now */
 
-  /* 检查像素格式支持 */
+  /* Check pixel format support */
   if (enc->codec->pix_fmts) {
     const enum AVPixelFormat *p = enc->codec->pix_fmts;
     bool nv12_supported = false;
@@ -153,7 +153,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
     encoder_log(LOG_WARNING, enc, "Encoder didn't list formats, assuming NV12");
   }
 
-  /* 设置编码参数 */
+  /* Set the encoding parameters */
   enc->codec_context->bit_rate = enc->bitrate * 1000;
   enc->codec_context->gop_size = enc->keyint_sec * voi->fps_num / voi->fps_den;
 
@@ -165,12 +165,13 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
   }
 
   /* Flags */
-  /* Flags: 不使用 GLOBAL_HEADER，强制让编码器在关键帧输出包含 VPS/SPS/PPS，
-   * 否则在使用 SLS (SRT Live Server) 这种基于 TS 流中间件时，
-   * 它由于找不到带外 extradata 或帧内的 SPS/PPS 可能会一直丢弃视频 (视频黑屏)。 */
+  /* Flags: no GLOBAL_HEADER, so the encoder emits VPS/SPS/PPS in-band on
+   * keyframes. Otherwise TS-based middleware such as SLS (SRT Live Server)
+   * finds neither out-of-band extradata nor in-frame SPS/PPS, and can drop
+   * video indefinitely (a black screen). */
   // enc->codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
-  /* 打开编码器 opts */
+  /* Open the encoder (opts) */
   AVDictionary *opts = NULL;
 
   /* Preset Mapping */
@@ -226,7 +227,7 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
         enc->codec_context->bit_rate; /* 1s buffer */
   }
 
-  /* 打印错误信息 (Helper) */
+  /* Print the error (helper) */
   char errbuf[128];
   int ret;
 
@@ -242,18 +243,18 @@ static void *sei_stamper_encoder_create(obs_data_t *settings,
   if (opts)
     av_dict_free(&opts);
 
-  /* 分配Frame和Packet */
+  /* Allocate the frame and packet */
   enc->frame = av_frame_alloc();
   enc->packet = av_packet_alloc();
 
-  /* 初始化NTP */
+  /* Initialise NTP */
   const char *ntp_server = obs_data_get_string(settings, "ntp_server");
   int ntp_port = (int)obs_data_get_int(settings, "ntp_port");
   enc->ntp_enabled = obs_data_get_bool(settings, "ntp_enabled");
 
   if (enc->ntp_enabled) {
     if (ntp_client_init(&enc->ntp_client, ntp_server, (uint16_t)ntp_port)) {
-      ntp_client_sync(&enc->ntp_client);
+      ntp_client_start_background_sync(&enc->ntp_client, 60000);
       encoder_log(LOG_INFO, enc, "NTP Initialized: %s:%d", ntp_server,
                   ntp_port);
     } else {
@@ -280,7 +281,7 @@ static void *av1_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
   return sei_stamper_encoder_create(settings, encoder, SEI_STAMPER_CODEC_AV1);
 }
 
-/* 编码函数 */
+/* Encode */
 static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
                                        struct encoder_packet *packet,
                                        bool *received_packet) {
@@ -290,19 +291,19 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
   if (!frame || !packet || !received_packet)
     return false;
 
-  /* 清理上一帧的状态（如果有）- 重要：防止引用泄露，也防止脏数据 */
+  /* Clear any previous frame state: prevents reference leaks and stale data */
   av_frame_unref(enc->frame);
 
-  /* 手动关联OBS的数据到FFmpeg Frame
-     注意：我们不拥有数据，所以不要创建AVBufferRef (buf[i]保持NULL)
-     这样av_frame_unref不会释放frame->data指向的内存 */
+  /* Point the FFmpeg frame at OBS's data by hand.
+     Note: we do not own the data, so no AVBufferRef is created (buf[i] stays
+     NULL), which stops av_frame_unref freeing what frame->data points at. */
 
   enc->frame->format = enc->codec_context->pix_fmt;
   enc->frame->width = enc->codec_context->width;
   enc->frame->height = enc->codec_context->height;
   enc->frame->pts = frame->pts;
 
-  /* 只有NV12支持目前 */
+  /* Only NV12 is supported for now */
   if (enc->codec_context->pix_fmt == AV_PIX_FMT_NV12) {
     enc->frame->linesize[0] = frame->linesize[0];
     enc->frame->linesize[1] = frame->linesize[1];
@@ -316,11 +317,12 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
     return false;
   }
 
-  /* 发送Frame给编码器 */
+  /* Send the frame to the encoder */
   int ret = avcodec_send_frame(enc->codec_context, enc->frame);
 
-  /* 发送后立即解除引用，不仅是为了清理，也是为了断开与OBS数据的关联
-     FFmpeg如果内部需要保留数据（异步编码），它在send_frame时已经做了深拷贝（因为buf为NULL）
+  /* Unref right after sending: not just cleanup, but to break the link to
+     OBS's data. If FFmpeg needs to keep it (async encoding) it already
+     deep-copied during send_frame, since buf was NULL
   */
   av_frame_unref(enc->frame);
 
@@ -331,7 +333,7 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
     return false;
   }
 
-  /* 接收Packets */
+  /* Receive packets */
   ret = avcodec_receive_packet(enc->codec_context, enc->packet);
   if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
     *received_packet = false;
@@ -345,18 +347,12 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
 
   *received_packet = true;
 
-  /* 更新NTP时间 */
+  /* NTP is refreshed on a background thread; just read the latest here. */
   if (enc->ntp_enabled) {
-    uint64_t now = os_gettime_ns();
-    if (enc->last_ntp_sync_time == 0 ||
-        (now - enc->last_ntp_sync_time) > 60000000000ULL) { // 1 min sync
-      if (ntp_client_sync(&enc->ntp_client))
-        enc->last_ntp_sync_time = now;
-    }
     ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
   }
 
-  /* 处理SEI插入 (仅对关键帧插入时间戳) */
+  /* SEI insertion (timestamps on keyframes only) */
   bool has_sei = false;
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
@@ -366,12 +362,12 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
     size_t payload_size = 0;
     if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
                               &payload_size)) {
-      /* 根据编码器类型选择SEI NAL类型 */
+      /* Pick the SEI NAL type from the encoder type */
       sei_nal_type_t nal_type = SEI_NAL_H264;
       if (enc->codec_type == SEI_STAMPER_CODEC_H265) {
         nal_type = SEI_NAL_H265_PREFIX;
       }
-      /* AV1使用不同的SEI机制，暂时跳过 */
+      /* AV1 uses a different SEI mechanism; skipped for now */
       if (enc->codec_type != SEI_STAMPER_CODEC_AV1) {
         if (build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal,
                                &sei_nal_size)) {
@@ -382,7 +378,8 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
     }
   }
 
-  /* 组装最终Packet数据 - SEI必须插入在AUD/参数集之后、Slice之前 */
+  /* Assemble the final packet - the SEI must land after the AUD/parameter
+     sets and before the slice */
   size_t total_size = enc->packet->size + (has_sei ? sei_nal_size : 0);
 
   if (enc->packet_buffer_size < total_size) {
@@ -392,16 +389,16 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
   }
 
   if (has_sei) {
-    /* 查找AUD和参数集的结束位置，SEI必须在其之后 */
+    /* Find where the AUD and parameter sets end; the SEI goes after them */
     const uint8_t *pkt_data = enc->packet->data;
     int pkt_size = enc->packet->size;
     size_t insert_pos = 0;
 
-    /* 遍历NAL单元，找到AUD/VPS/SPS/PPS结束的位置 */
+    /* Walk the NAL units to find where AUD/VPS/SPS/PPS end */
     const uint8_t *p = pkt_data;
     size_t remaining = pkt_size;
     while (remaining > 4) {
-      /* 查找起始码 */
+      /* Find the start code */
       size_t sc_len = 0;
       if (p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 1) {
         sc_len = 4;
@@ -410,7 +407,7 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
       }
       if (sc_len == 0) { p++; remaining--; continue; }
 
-      /* 获取NAL类型 */
+      /* Get the NAL type */
       const uint8_t *nal_hdr = p + sc_len;
       if (remaining <= sc_len) break;
 
@@ -428,11 +425,11 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
         is_prefix_nal = (nal_type == 7 || nal_type == 8 || nal_type == 9);
       }
 
-      /* 找到下一个NAL起始码来确定当前NAL的结束位置 */
+      /* Find the next NAL start code to locate this NAL's end */
       const uint8_t *next = nal_hdr + 1;
       size_t next_rem = remaining - sc_len - 1;
       const uint8_t *nal_end = NULL;
-      /* >= 3 才能检测3字节起始码 00 00 01；>= 4 才能检测4字节起始码 00 00 00 01 */
+      /* >= 3 detects 00 00 01; >= 4 detects 00 00 00 01 */
       while (next_rem >= 3) {
         if (next[0] == 0 && next[1] == 0 &&
             (next[2] == 1 || (next[2] == 0 && next_rem >= 4 && next[3] == 1))) {
@@ -441,30 +438,30 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
         }
         next++; next_rem--;
       }
-      if (!nal_end) nal_end = pkt_data + pkt_size; /* 最后一个NAL */
+      if (!nal_end) nal_end = pkt_data + pkt_size; /* the last NAL */
 
       if (is_prefix_nal) {
-        /* 这是前置NAL (AUD/VPS/SPS/PPS)，SEI应在其之后 */
+        /* A leading NAL (AUD/VPS/SPS/PPS): the SEI goes after it */
         insert_pos = nal_end - pkt_data;
         p = nal_end;
         remaining = pkt_size - (p - pkt_data);
       } else {
-        /* 遇到非前置NAL (SEI或Slice)，停止搜索 */
+        /* A non-leading NAL (SEI or slice): stop searching */
         break;
       }
     }
 
-    /* 在正确位置插入SEI */
+    /* Insert the SEI at the right position */
     size_t offset = 0;
-    /* 1. 复制AUD/参数集部分 */
+    /* 1. Copy the AUD/parameter-set section */
     if (insert_pos > 0) {
       memcpy(enc->packet_buffer, pkt_data, insert_pos);
       offset = insert_pos;
     }
-    /* 2. 插入我们的SEI */
+    /* 2. Insert our SEI */
     memcpy(enc->packet_buffer + offset, sei_nal, sei_nal_size);
     offset += sei_nal_size;
-    /* 3. 复制剩余数据 (编码器自带SEI + Slice) */
+    /* 3. Copy the rest (the encoder's own SEI + the slice) */
     size_t rest = pkt_size - insert_pos;
     memcpy(enc->packet_buffer + offset, pkt_data + insert_pos, rest);
 
@@ -516,7 +513,7 @@ static obs_properties_t *sei_stamper_encoder_properties(void *unused) {
   UNUSED_PARAMETER(unused);
   obs_properties_t *props = obs_properties_create();
 
-  /* 核心设置 */
+  /* Core settings */
   obs_property_t *list =
       obs_properties_add_list(props, "codec_name", "Encoder",
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
@@ -548,7 +545,7 @@ static obs_properties_t *sei_stamper_encoder_properties(void *unused) {
   obs_properties_add_text(props, "profile", "Profile (e.g. high, main)",
                           OBS_TEXT_DEFAULT);
 
-  /* NTP设置 */
+  /* NTP settings */
   obs_properties_add_bool(props, "ntp_enabled", "Enable NTP Sync");
   obs_properties_add_text(props, "ntp_server", "NTP Server", OBS_TEXT_DEFAULT);
   obs_properties_add_int(props, "ntp_port", "NTP Port", 1, 65535, 1);
@@ -556,9 +553,9 @@ static obs_properties_t *sei_stamper_encoder_properties(void *unused) {
   return props;
 }
 
-/* H.264 编码器回调 */
+/* H.264 encoder callbacks */
 static bool sei_stamper_encoder_update(void *data, obs_data_t *settings) {
-  /* 更新编码器设置（如果需要运行时更新）*/
+  /* Update encoder settings (for runtime updates, if ever needed)*/
   UNUSED_PARAMETER(data);
   UNUSED_PARAMETER(settings);
   return true;

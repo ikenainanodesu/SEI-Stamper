@@ -206,6 +206,28 @@ See the [LICENSE](LICENSE) file for details.
 
 ## Release Notes
 
+### v1.3.0 (2026-09-03)
+
+**🔧 NTP reliability (cross-platform):**
+- 🪟 **Fixed NTP on Windows**: `SO_RCVTIMEO` was set with a `struct timeval`, but Winsock expects a `DWORD` of milliseconds — it read `tv_sec` (5) as a **5 ms** timeout, so every sync failed with `WSAETIMEDOUT`. NTP never worked on Windows before this.
+- 🌐 **Try every resolved address**: `getaddrinfo` can return several addresses (often an IPv6 record first); the client now tries each until one answers instead of only the first.
+- 🛡️ **Response validation**: reject Kiss-o'-Death (stratum 0), unsynchronized (stratum ≥ 16) and non-server-mode replies instead of anchoring on a bogus time.
+- 🐛 **Receive error handling**: a failed `recvfrom` no longer slips past a signed/unsigned length check; failures log the socket error code so the cause is visible.
+
+**🚀 Non-blocking sync:**
+- ⏱️ **Background NTP thread**: sync now runs on its own thread (opt-in `ntp_client_start_background_sync`), so the network round-trip never blocks the encode path; encoders just read the latest cached time. State is mutex-guarded for a consistent snapshot.
+- 🔧 **Configurable NTP port** via the `ntp_port` setting (defaults to 123).
+
+**🎞️ Encoding:**
+- 🔑 **Keyframe-keyed parameter-set re-injection (NVENC)**: SPS/PPS are re-injected on *every* keyframe, not only when an SEI is present — so a keyframe emitted before the first NTP sync is still decodable by a mid-stream MPEG-TS/SRT joiner.
+- 🛠️ **AMF preset mapping**: the unified encoder's `fast` preset is mapped to AMF's `speed` (AMF's `quality` option rejects `fast`).
+
+**🧩 Compatibility:**
+- ✅ **FFmpeg 8 / avcodec 62**: use `AV_FRAME_FLAG_KEY` instead of the removed `AVFrame::key_frame` field so the receiver source builds on current FFmpeg.
+
+**📝 Housekeeping:**
+- Source comments translated to English throughout.
+
 ### v1.2.3-beta (2026-06-07)
 
 **🔧 Fixes & Validation:**
@@ -269,5 +291,5 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Current Version**: 1.2.3-beta
-**Last Updated**: 2026-06-07
+**Current Version**: 1.3.0
+**Last Updated**: 2026-09-03

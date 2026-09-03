@@ -6,19 +6,20 @@
 #ifdef ENABLE_AMD
 
 #include "ntp-client.h"
+#include "sei-handler.h"
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
 
 typedef struct amd_encoder {
   obs_encoder_t *encoder;
 
-  /* FFmpeg 编码器 */
+  /* FFmpeg encoder */
   const AVCodec *codec;
   AVCodecContext *codec_context;
   AVFrame *frame;
   AVPacket *packet;
 
-  /* 配置 */
+  /* Configuration */
   int width;
   int height;
   int fps_num;
@@ -37,16 +38,15 @@ typedef struct amd_encoder {
   uint8_t *extra_data;
   size_t extra_data_size;
 
-  /* NTP 同步 */
+  /* NTP sync */
   struct ntp_client ntp_client;
-  uint64_t last_ntp_sync_time;
   ntp_timestamp_t current_ntp_time;
   bool ntp_enabled;
-  uint32_t ntp_sync_interval_ms; /* NTP同步间隔（毫秒） */
+  uint32_t ntp_sync_interval_ms; /* NTP sync interval (ms) */
 
-  /* Packet 缓冲区 */
-  uint8_t *packet_buffer;    // 临时packet缓冲区
-  size_t packet_buffer_size; // packet缓冲区大小
+  /* Packet buffer */
+  uint8_t *packet_buffer;    // Temporary packet buffer
+  size_t packet_buffer_size; // Packet buffer size
 
 } amd_encoder_t;
 

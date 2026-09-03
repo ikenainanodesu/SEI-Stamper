@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(sei-stamper VERSION 1.2.3)
+project(sei-stamper VERSION 1.3.0)
 
 # 设置C/C++标准
 set(CMAKE_C_STANDARD 11)

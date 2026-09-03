@@ -15,11 +15,11 @@ const uint8_t SEI_STAMPER_UUID[16] = {0xa5, 0xb3, 0xc2, 0xd1, 0xe4, 0xf5,
                                       0x67, 0x89, 0xab, 0xcd, 0xef, 0x01,
                                       0x23, 0x45, 0x67, 0x89};
 
-/* 日志宏 */
+/* Logging macros */
 #define sei_log(level, format, ...)                                            \
   blog(level, "[SEI Handler] " format, ##__VA_ARGS__)
 
-/* 辅助函数:写入可变长度编码(用于SEI size) */
+/* Helper: write a variable-length code (used for the SEI size) */
 static size_t write_variable_length(uint8_t *buf, size_t value) {
   size_t written = 0;
   while (value >= 0xFF) {
@@ -30,7 +30,7 @@ static size_t write_variable_length(uint8_t *buf, size_t value) {
   return written;
 }
 
-/* 辅助函数:读取可变长度编码 */
+/* Helper: read a variable-length code */
 static size_t read_variable_length(const uint8_t *buf, size_t max_size,
                                    size_t *value_out) {
   size_t value = 0;
@@ -50,7 +50,7 @@ static size_t read_variable_length(const uint8_t *buf, size_t max_size,
   return read;
 }
 
-/* 构建NTP时间戳SEI payload */
+/* Build the NTP timestamp SEI payload */
 bool build_ntp_sei_payload(int64_t pts, const ntp_timestamp_t *ntp_time,
                            uint8_t **payload_out, size_t *payload_size) {
   if (!ntp_time || !payload_out || !payload_size) {
@@ -58,12 +58,12 @@ bool build_ntp_sei_payload(int64_t pts, const ntp_timestamp_t *ntp_time,
     return false;
   }
 
-  /* Payload结构:
-   * - UUID: 16字节
-   * - PTS: 8字节(int64_t, big-endian)
-   * - NTP seconds: 4字节(uint32_t, big-endian)
-   * - NTP fraction: 4字节(uint32_t, big-endian)
-   * 总计: 32字节
+  /* Payload layout:
+   * - UUID: 16 bytes
+   * - PTS: 8 bytes (int64_t, big-endian)
+   * - NTP seconds: 4 bytes (uint32_t, big-endian)
+   * - NTP fraction: 4 bytes (uint32_t, big-endian)
+   * Total: 32 bytes
    */
   size_t payload_sz = 16 + 8 + 4 + 4;
   uint8_t *payload = (uint8_t *)bmalloc(payload_sz);
@@ -106,7 +106,7 @@ bool build_ntp_sei_payload(int64_t pts, const ntp_timestamp_t *ntp_time,
   return true;
 }
 
-/* 构建完整的SEI NAL单元 */
+/* Build a complete SEI NAL unit */
 bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
                         sei_nal_type_t nal_type, uint8_t **nal_unit_out,
                         size_t *nal_unit_size) {
@@ -115,13 +115,13 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
     return false;
   }
 
-  /* NAL单元结构 (Annex B):
-   * - 起始码: 0x00 0x00 0x00 0x01 (4字节，不属于RBSP)
-   * - NAL header: 1字节(H.264)或2字节(H.265)
-   * - SEI payloadType: 可变长度编码
-   * - SEI payloadSize: 记录原始（转义前）字节数，符合 ISO/IEC 23008-2 规范
-   * - Payload: 需做EPB (Emulation Prevention Bytes) 转义
-   * - RBSP trailing bits: 0x80 (1字节)
+  /* NAL unit layout (Annex B):
+   * - start code: 0x00 0x00 0x00 0x01 (4 bytes, not part of the RBSP)
+   * - NAL header: 1 byte (H.264) or 2 bytes (H.265)
+   * - SEI payloadType: variable-length code
+   * - SEI payloadSize: the raw (pre-escaping) byte count, per ISO/IEC 23008-2
+   * - Payload: must be EPB (Emulation Prevention Bytes) escaped
+   * - RBSP trailing bits: 0x80 (1 byte)
    */
 
   size_t header_size = (nal_type == SEI_NAL_H264) ? 1 : 2;
@@ -130,11 +130,12 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
 
   size_t type_len =
       write_variable_length(type_buf, SEI_TYPE_USER_DATA_UNREGISTERED);
-  /* payloadSize 写入 RBSP 原始长度（EPB转义前），符合规范 */
+  /* payloadSize is the raw RBSP length, before EPB escaping, per the spec */
   size_t size_len = write_variable_length(size_buf, payload_size);
 
-  /* 最坏情况下每2字节的00序列就插入一个EPB（0x03），payload最多膨胀1.5倍
-   * 预留足够空间：4(start) + header + type + size + payload*1.5 + 4margin + 1(trailing) */
+  /* Worst case inserts an EPB (0x03) per 2-byte 00 run, so the payload can
+   * grow 1.5x. Reserve 4(start) + header + type + size + payload*1.5 +
+   * 4 margin + 1(trailing). */
   size_t max_escaped_payload = payload_size + (payload_size / 2) + 4;
   size_t max_total = 4 + header_size + type_len + size_len + max_escaped_payload + 1;
   uint8_t *nal_unit = (uint8_t *)bmalloc(max_total);
@@ -145,7 +146,7 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
 
   size_t offset = 0;
 
-  /* 起始码（Annex B start code，不属于RBSP，不做EPB计数）*/
+  /* Annex B start code: not part of the RBSP, so not EPB-counted*/
   nal_unit[offset++] = 0x00;
   nal_unit[offset++] = 0x00;
   nal_unit[offset++] = 0x00;
@@ -166,21 +167,22 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
   memcpy(nal_unit + offset, type_buf, type_len);
   offset += type_len;
 
-  /* SEI payloadSize（记录原始未转义长度）*/
+  /* SEI payloadSize (the raw, unescaped length)*/
   memcpy(nal_unit + offset, size_buf, size_len);
   offset += size_len;
 
-  /* Payload（需做EPB转义）
-   * EPB规则（ISO/IEC 23008-2 §7.4.1）：
-   *   在RBSP中，若出现 00 00 {00 | 01 | 02 | 03} 序列，
-   *   则在第三字节之前插入 emulation prevention byte 0x03。
-   * NAL header+type+size 写完后连续零计数重置（因为它们固定值不会以00结尾到达此处）
-   * 实际上需要连续跟踪整个RBSP的zero_count，此处保守地从0开始，
-   * 对32字节的UUID+时间戳payload是足够的 */
-  int zero_count = 0; /* 当前RBSP中连续0x00字节数 */
+  /* Payload (EPB escaping required)
+   * EPB rule (ISO/IEC 23008-2 §7.4.1):
+   *   where an RBSP contains the sequence 00 00 {00 | 01 | 02 | 03},
+   *   insert emulation prevention byte 0x03 before the third byte.
+   * The zero run resets after NAL header+type+size: their fixed values
+   * never end in 00. Strictly zero_count should be tracked across the whole
+   * RBSP; starting at 0 is conservative and sufficient for the 32-byte
+   * UUID+timestamp payload */
+  int zero_count = 0; /* consecutive 0x00 bytes in the current RBSP */
   for (size_t i = 0; i < payload_size; i++) {
     uint8_t b = payload[i];
-    /* 当前已连续>=2个00，且当前字节 <= 0x03，需插入EPB */
+    /* >=2 consecutive 00s and this byte <= 0x03: insert an EPB */
     if (zero_count >= 2 && b <= 0x03) {
       nal_unit[offset++] = 0x03;
       zero_count = 0;
@@ -189,7 +191,7 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
     zero_count = (b == 0x00) ? (zero_count + 1) : 0;
   }
 
-  /* RBSP trailing bits: 0x80（bit=1，其余补0以字节对齐）*/
+  /* RBSP trailing bits: 0x80 (a 1 bit, then zeros to byte-align)*/
   nal_unit[offset++] = 0x80;
 
   *nal_unit_out = nal_unit;
@@ -202,7 +204,7 @@ bool build_sei_nal_unit(const uint8_t *payload, size_t payload_size,
 }
 
 
-/* 合并SEI数据 */
+/* Merge SEI data */
 bool merge_sei_data(const uint8_t *original_sei, size_t original_size,
                     const uint8_t *custom_sei, size_t custom_size,
                     uint8_t **merged_sei_out, size_t *merged_size) {
@@ -211,7 +213,7 @@ bool merge_sei_data(const uint8_t *original_sei, size_t original_size,
     return false;
   }
 
-  /* 如果没有原始SEI,直接返回自定义SEI */
+  /* With no original SEI, return the custom SEI as-is */
   if (!original_sei || original_size == 0) {
     uint8_t *merged = (uint8_t *)bmalloc(custom_size);
     if (!merged) {
@@ -223,7 +225,7 @@ bool merge_sei_data(const uint8_t *original_sei, size_t original_size,
     return true;
   }
 
-  /* 合并:自定义SEI + 原始SEI */
+  /* Merge: custom SEI + original SEI */
   size_t total_size = custom_size + original_size;
   uint8_t *merged = (uint8_t *)bmalloc(total_size);
   if (!merged) {
@@ -243,7 +245,7 @@ bool merge_sei_data(const uint8_t *original_sei, size_t original_size,
   return true;
 }
 
-/* 从SEI payload中解析NTP时间戳 */
+/* Parse an NTP timestamp out of an SEI payload */
 bool parse_ntp_sei(const uint8_t *sei_data, size_t sei_size,
                    ntp_sei_data_t *ntp_data_out) {
   if (!sei_data || !ntp_data_out) {
@@ -261,10 +263,10 @@ bool parse_ntp_sei(const uint8_t *sei_data, size_t sei_size,
     }
   }
 
-  /* 查找我们的UUID */
+  /* Look for our UUID */
   for (size_t i = 0; i + 32 <= unescaped_size; i++) {
     if (memcmp(unescaped + i, SEI_STAMPER_UUID, 16) == 0) {
-      /* 找到了!解析数据 */
+      /* Found it - parse the data */
       size_t offset = i;
 
       /* UUID */
@@ -309,7 +311,7 @@ bool parse_ntp_sei(const uint8_t *sei_data, size_t sei_size,
   return false;
 }
 
-/* 从NAL单元中提取SEI payload */
+/* Extract the SEI payload from a NAL unit */
 static const uint8_t *find_start_code_sei(const uint8_t *data, size_t size, size_t *sc_size) {
   if (size < 3) return NULL;
   for (size_t i = 0; i < size - 2; i++) {

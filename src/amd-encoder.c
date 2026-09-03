@@ -8,17 +8,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* 日志宏 */
+/* Logging macros */
 #define encoder_log(level, enc, format, ...)                                   \
   blog(level, "[AMD Encoder: '%s'] " format,                                   \
        obs_encoder_get_name(enc->encoder), ##__VA_ARGS__)
 
 #include "sei-handler.h"
 #if 0
-/* NTP SEI 构建函数 (复用自 nvenc-encoder.c) */
+/* NTP SEI build helper (mirrors nvenc-encoder.c) */
 static bool amd_build_ntp_sei_payload(int64_t pts, ntp_timestamp_t *ntp_time,
                                       uint8_t **payload, size_t *size) {
-  /* UUID: 与其他编码器使用相同的 UUID */
+  /* UUID: the same one the other encoders use */
   const uint8_t uuid[16] = {0xa5, 0xb3, 0xc2, 0xd1, 0xe4, 0xf5, 0x67, 0x89,
                             0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89};
 
@@ -49,7 +49,7 @@ static bool amd_build_ntp_sei_payload(int64_t pts, ntp_timestamp_t *ntp_time,
 static bool amd_build_sei_nal_unit(uint8_t *payload, size_t payload_size,
                                    int payload_type, uint8_t **nal_unit,
                                    size_t *nal_size) {
-  /* 标准 H.264 SEI NAL 构建 */
+  /* Standard H.264 SEI NAL construction */
   size_t size_bytes = 1;
   if (payload_size >= 255)
     size_bytes += (payload_size / 255);
@@ -91,14 +91,14 @@ static bool amd_build_sei_nal_unit(uint8_t *payload, size_t payload_size,
 }
 #endif
 
-/* H.264/H.265 NAL类型定义 */
+/* H.264/H.265 NAL type definitions */
 #define H264_NAL_SPS 7
 #define H264_NAL_PPS 8
 #define H265_NAL_VPS 32
 #define H265_NAL_SPS 33
 #define H265_NAL_PPS 34
 
-/* 查找NAL单元起始码 */
+/* Find a NAL unit start code */
 static const uint8_t *find_nal_start_code_amd(const uint8_t *data, size_t size,
                                               size_t *start_code_size) {
   if (size < 3)
@@ -118,7 +118,7 @@ static const uint8_t *find_nal_start_code_amd(const uint8_t *data, size_t size,
   return NULL;
 }
 
-/* 查找参数集结束位置(SPS/PPS/VPS之后) */
+/* Find the end of the parameter sets (after SPS/PPS/VPS) */
 static size_t find_parameter_sets_end_amd(const uint8_t *data, size_t size,
                                           int codec_type) {
   const uint8_t *current = data;
@@ -178,7 +178,7 @@ static size_t find_parameter_sets_end_amd(const uint8_t *data, size_t size,
   return last_param_end;
 }
 
-/* 销毁编码器 */
+/* Destroy the encoder */
 void amd_encoder_destroy(amd_encoder_t *enc) {
   if (!enc)
     return;
@@ -209,14 +209,9 @@ void amd_encoder_destroy(amd_encoder_t *enc) {
 }
 
 /*
- * Resolve the codec-appropriate profile string for FFmpeg's *_amf encoders.
- * The unified-encoder UI exposes H.264 profile names (baseline/main/high) for
- * all codecs, but hevc_amf accepts only "main" and av1_amf only "main".
- * Passing "high" to hevc_amf returns EINVAL from avcodec_open2, so H.265 never
- * opens. Coerce unrecognised values to a sensible per-codec default.
- *
- * codec_type: 0 = H.264, 1 = H.265, 2 = AV1.
- * Returns NULL to mean "do not set the profile option".
+ * Coerce the UI's H.264 profile names to a codec-valid value: hevc_amf and
+ * av1_amf reject "high" with EINVAL, so H.265 never opens.
+ * NULL means "leave the profile option unset".
  */
 static const char *amd_resolve_profile(int codec_type, const char *in) {
   if (codec_type == 0) { /* h264_amf: baseline/main/high/constrained_* */
@@ -226,12 +221,12 @@ static const char *amd_resolve_profile(int codec_type, const char *in) {
   }
   if (codec_type == 1) /* hevc_amf: main only */
     return "main";
-  if (codec_type == 2) /* av1_amf: main */
+  if (codec_type == 2) /* av1_amf: main only */
     return "main";
   return NULL;
 }
 
-/* 创建编码器 - Internal (public for unified encoder) */
+/* Create - internal (public for the unified encoder) */
 void *amd_encoder_create_internal(obs_data_t *settings,
                                   obs_encoder_t *encoder) {
   amd_encoder_t *enc = bzalloc(sizeof(amd_encoder_t));
@@ -256,7 +251,7 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   if (enc->codec_type < 0 || enc->codec_type > 2)
     enc->codec_type = 0; // Default to H.264
 
-  /* 根据 codec_type 设置编码器名称 */
+  /* Pick the encoder name from codec_type */
   switch (enc->codec_type) {
   case 0: // H.264
     snprintf(enc->codec_name, sizeof(enc->codec_name), "h264_amf");
@@ -272,18 +267,21 @@ void *amd_encoder_create_internal(obs_data_t *settings,
     break;
   }
 
-  /* NTP 初始化 */
+  /* NTP initialisation */
   const char *ntp_server = obs_data_get_string(settings, "ntp_server");
-  ntp_client_init(&enc->ntp_client, ntp_server, 123);
+  uint16_t ntp_port = (uint16_t)obs_data_get_int(settings, "ntp_port");
+  if (ntp_port == 0) ntp_port = 123;
+  ntp_client_init(&enc->ntp_client, ntp_server, ntp_port);
   enc->ntp_enabled = true;
   enc->ntp_sync_interval_ms =
       (uint32_t)obs_data_get_int(settings, "ntp_sync_interval");
   if (enc->ntp_sync_interval_ms == 0)
-    enc->ntp_sync_interval_ms = 60000; // 默认 60 秒
+    enc->ntp_sync_interval_ms = 60000; // default 60 s
+  ntp_client_start_background_sync(&enc->ntp_client, enc->ntp_sync_interval_ms);
 
   encoder_log(LOG_INFO, enc, "Creating AMD AMF encoder: %s", enc->codec_name);
 
-  /* 查找 FFmpeg AMF 编码器 */
+  /* Find the FFmpeg AMF encoder */
   enc->codec = avcodec_find_encoder_by_name(enc->codec_name);
   if (!enc->codec) {
     encoder_log(LOG_ERROR, enc, "AMD AMF encoder not found (%s)",
@@ -302,7 +300,7 @@ void *amd_encoder_create_internal(obs_data_t *settings,
     return NULL;
   }
 
-  /* 配置编码参数 */
+  /* Configure encoding parameters */
   enc->codec_context->width = enc->width;
   enc->codec_context->height = enc->height;
   enc->codec_context->time_base = (AVRational){voi->fps_den, voi->fps_num};
@@ -311,19 +309,28 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   enc->codec_context->bit_rate = enc->bitrate * 1000;
   enc->codec_context->gop_size = enc->keyint;
   enc->codec_context->max_b_frames = enc->bframes;
+  /* NOTE: h264_amf/hevc_amf need AV_CODEC_FLAG_GLOBAL_HEADER on avcodec>=62
+   * (else OBS's muxer aborts with "Failed to retrieve headers"), together with
+   * the inline SPS/PPS re-injection the NVENC path does. That pair is not yet
+   * implemented for AMF here (no AMD hardware to verify), so the flag is left
+   * off to preserve the existing in-band-parameter behaviour. */
   /* enc->codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; */
 
-  /* AMD AMF 特定选项 */
+  /* AMD AMF-specific options */
   AVDictionary *opts = NULL;
 
-  /* Quality preset */
-  if (enc->preset && strlen(enc->preset) > 0) {
-    av_dict_set(&opts, "quality", enc->preset, 0);
-    encoder_log(LOG_INFO, enc, "Using quality preset: %s", enc->preset);
+  /* AMF's quality option expects speed/balanced/quality, but the unified UI
+   * sends fast; map it to speed. */
+  const char *amf_quality = enc->preset;
+  if (enc->preset && strcmp(enc->preset, "fast") == 0)
+    amf_quality = "speed";
+  if (amf_quality && strlen(amf_quality) > 0) {
+    av_dict_set(&opts, "quality", amf_quality, 0);
+    encoder_log(LOG_INFO, enc, "Using quality preset: %s (requested %s)",
+                amf_quality, enc->preset);
   }
 
-  /* Profile (coerce to codec-valid value - the UI exposes H.264 names for all
-   * codecs, but hevc_amf/av1_amf reject "high" with EINVAL). */
+  /* Profile */
   const char *amf_profile = amd_resolve_profile(enc->codec_type, enc->profile);
   if (amf_profile) {
     av_dict_set(&opts, "profile", amf_profile, 0);
@@ -335,7 +342,7 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   /* Rate control - CBR */
   av_dict_set(&opts, "rc", "cbr", 0);
 
-  /* 打开编码器 */
+  /* Open the encoder */
   char errbuf[128];
   int ret = avcodec_open2(enc->codec_context, enc->codec, &opts);
   if (ret < 0) {
@@ -350,11 +357,11 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   if (opts)
     av_dict_free(&opts);
 
-  /* 分配 Frame 和 Packet */
+  /* Allocate the frame and packet */
   enc->frame = av_frame_alloc();
   enc->packet = av_packet_alloc();
 
-  /* 提取 Extra Data */
+  /* Extract extra data */
   if (enc->codec_context->extradata_size > 0) {
     enc->extra_data_size = enc->codec_context->extradata_size;
     enc->extra_data = bmalloc(enc->extra_data_size);
@@ -371,7 +378,7 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   return enc;
 }
 
-/* 编码函数 - Internal (public for unified encoder) */
+/* Encode - internal (public for the unified encoder) */
 bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
                                  struct encoder_packet *packet,
                                  bool *received_packet) {
@@ -381,16 +388,16 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
   if (!frame || !packet || !received_packet)
     return false;
 
-  /* 清理上一帧 */
+  /* Clean up the previous frame */
   av_frame_unref(enc->frame);
 
-  /* 设置 Frame 参数 */
+  /* Set the frame parameters */
   enc->frame->format = enc->codec_context->pix_fmt;
   enc->frame->width = enc->codec_context->width;
   enc->frame->height = enc->codec_context->height;
   enc->frame->pts = frame->pts;
 
-  /* 复制 NV12 数据 */
+  /* Copy the NV12 data */
   if (enc->codec_context->pix_fmt == AV_PIX_FMT_NV12) {
     enc->frame->linesize[0] = frame->linesize[0];
     enc->frame->linesize[1] = frame->linesize[1];
@@ -402,7 +409,7 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
     return false;
   }
 
-  /* 发送 Frame */
+  /* Send the frame */
   int ret = avcodec_send_frame(enc->codec_context, enc->frame);
   av_frame_unref(enc->frame);
 
@@ -412,7 +419,7 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
     return false;
   }
 
-  /* 接收 Packet */
+  /* Receive the packet */
   ret = avcodec_receive_packet(enc->codec_context, enc->packet);
   if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
     *received_packet = false;
@@ -425,39 +432,37 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
 
   *received_packet = true;
 
-  /* NTP 时间更新 */
-  uint64_t now = os_gettime_ns();
-  uint64_t sync_interval_ns = (uint64_t)enc->ntp_sync_interval_ms * 1000000ULL;
-  if (enc->last_ntp_sync_time == 0 ||
-      (now - enc->last_ntp_sync_time) > sync_interval_ns) {
-    /* Always update last_sync_time to avoid retry storm on failure */
-    enc->last_ntp_sync_time = now;
-    ntp_client_sync(&enc->ntp_client);
-  }
-  ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
+  /* NTP is refreshed on a background thread; just read the latest here. */
+  bool ntp_valid = ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
 
-  /* SEI 插入 (关键帧) */
+  /* SEI insertion (keyframes only — IVS player is hot-loop sensitive to
+   * per-frame SEI) */
   bool keyframe = (enc->packet->flags & AV_PKT_FLAG_KEY) != 0;
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  if (keyframe) {
+  if (ntp_valid && keyframe) {
     uint8_t *payload = NULL;
     size_t payload_size = 0;
     if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
-                                  &payload_size)) {
+                              &payload_size)) {
       sei_nal_type_t nal_type = (enc->codec_type == 1) ? SEI_NAL_H265_PREFIX : SEI_NAL_H264;
       build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal, &sei_nal_size);
       bfree(payload);
 
       encoder_log(LOG_DEBUG, enc,
-                  "[AMD] Inserted SEI: PTS=%lld NTP=%u.%u Size=%zu", frame->pts,
-                  enc->current_ntp_time.seconds, enc->current_ntp_time.fraction,
-                  sei_nal_size);
+                  "[AMD] SEI stamped: PTS=%lld NTP_sec=%u (0x%08X) NTP_frac=%u keyframe=%d",
+                  frame->pts,
+                  enc->current_ntp_time.seconds, enc->current_ntp_time.seconds,
+                  enc->current_ntp_time.fraction, keyframe);
     }
+  } else if (!ntp_valid) {
+    encoder_log(LOG_WARNING, enc,
+                "[AMD] Frame at PTS=%lld but NTP time not available, "
+                "skipping SEI insertion", frame->pts);
   }
 
-  /* 组装Packet with correct SEI insertion position */
+  /* Assemble the packet with the SEI in the right position */
   size_t total_size = enc->packet->size + sei_nal_size;
   if (enc->packet_buffer_size < total_size) {
     bfree(enc->packet_buffer);
@@ -465,34 +470,35 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
     enc->packet_buffer_size = total_size;
   }
 
-  if (sei_nal && keyframe) {
-    /* 查找参数集结束位置 */
-    size_t param_sets_end = find_parameter_sets_end_amd(
-        enc->packet->data, enc->packet->size, enc->codec_type);
+  if (sei_nal) {
+    if (keyframe) {
+      /* Keyframe: insert SEI after parameter sets, before IDR slice */
+      size_t param_sets_end = find_parameter_sets_end_amd(
+          enc->packet->data, enc->packet->size, enc->codec_type);
 
-    if (param_sets_end > 0 && param_sets_end < enc->packet->size) {
-      /* 正确顺序: 参数集 → SEI → IDR slice */
-      /* 1. 复制参数集 */
-      memcpy(enc->packet_buffer, enc->packet->data, param_sets_end);
-      size_t offset = param_sets_end;
+      if (param_sets_end > 0 && param_sets_end < enc->packet->size) {
+        /* Correct order: parameter sets -> SEI -> IDR slice */
+        memcpy(enc->packet_buffer, enc->packet->data, param_sets_end);
+        size_t offset = param_sets_end;
 
-      /* 2. 插入SEI */
-      memcpy(enc->packet_buffer + offset, sei_nal, sei_nal_size);
-      offset += sei_nal_size;
+        memcpy(enc->packet_buffer + offset, sei_nal, sei_nal_size);
+        offset += sei_nal_size;
 
-      /* 3. 复制剩余数据 */
-      size_t remaining = enc->packet->size - param_sets_end;
-      memcpy(enc->packet_buffer + offset, enc->packet->data + param_sets_end,
-             remaining);
+        size_t remaining = enc->packet->size - param_sets_end;
+        memcpy(enc->packet_buffer + offset, enc->packet->data + param_sets_end,
+               remaining);
 
-      encoder_log(LOG_DEBUG, enc,
-                  "SEI inserted after parameter sets (offset: %zu)",
-                  param_sets_end);
+        encoder_log(LOG_DEBUG, enc,
+                    "SEI inserted after parameter sets (offset: %zu)",
+                    param_sets_end);
+      } else {
+        /* Fallback: prepend SEI before frame data */
+        memcpy(enc->packet_buffer, sei_nal, sei_nal_size);
+        memcpy(enc->packet_buffer + sei_nal_size, enc->packet->data,
+               enc->packet->size);
+      }
     } else {
-      /* Fallback到旧行为 */
-      encoder_log(LOG_WARNING, enc,
-                  "Could not find parameter sets end, inserting SEI at "
-                  "beginning (may cause decoding issues)");
+      /* Non-keyframe: prepend SEI before slice data */
       memcpy(enc->packet_buffer, sei_nal, sei_nal_size);
       memcpy(enc->packet_buffer + sei_nal_size, enc->packet->data,
              enc->packet->size);
@@ -500,7 +506,7 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
 
     bfree(sei_nal);
   } else {
-    /* 非关键帧或无SEI */
+    /* No SEI (NTP unavailable) */
     memcpy(enc->packet_buffer, enc->packet->data, enc->packet->size);
   }
 
@@ -515,7 +521,7 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
   return true;
 }
 
-/* 默认设置 */
+/* Defaults */
 static void amd_get_defaults(obs_data_t *settings) {
   obs_data_set_default_int(settings, "bitrate", 2500);
   obs_data_set_default_int(settings, "keyint_sec", 2);
@@ -523,10 +529,10 @@ static void amd_get_defaults(obs_data_t *settings) {
   obs_data_set_default_string(settings, "preset", "balanced");
   obs_data_set_default_string(settings, "profile", "high");
   obs_data_set_default_string(settings, "ntp_server", "time.windows.com");
-  obs_data_set_default_int(settings, "ntp_sync_interval", 60000); // 60 秒
+  obs_data_set_default_int(settings, "ntp_sync_interval", 60000); // 60 s
 }
 
-/* 属性 */
+/* Properties */
 static obs_properties_t *amd_properties(void *unused) {
   obs_properties_t *props = obs_properties_create();
 
@@ -545,23 +551,23 @@ static obs_properties_t *amd_properties(void *unused) {
   obs_properties_add_text(props, "profile", "Profile", OBS_TEXT_DEFAULT);
   obs_properties_add_text(props, "ntp_server", "NTP Server", OBS_TEXT_DEFAULT);
   obs_properties_add_int(props, "ntp_sync_interval", "NTP Sync Interval (ms)",
-                         1000, 600000, 1000); // 1秒 到 10分钟
+                         1000, 600000, 1000); // 1 s to 10 min
 
   return props;
 }
 
-/* 获取编码器名称 */
+/* Encoder name */
 static const char *amd_get_name(void *type_data) {
   return "SEI Stamper (AMD AMF)";
 }
 
-/* 获取视频信息 - Internal (public for unified encoder) */
+/* Video info - internal (public for the unified encoder) */
 void amd_encoder_get_video_info_internal(void *data,
                                          struct video_scale_info *info) {
   info->format = VIDEO_FORMAT_NV12;
 }
 
-/* 获取 Extra Data - Internal (public for unified encoder) */
+/* Extra data - internal (public for the unified encoder) */
 bool amd_encoder_get_extra_data_internal(void *data, uint8_t **extra_data,
                                          size_t *size) {
   amd_encoder_t *enc = (amd_encoder_t *)data;
@@ -590,7 +596,7 @@ static bool amd_get_extra_data(void *data, uint8_t **extra_data, size_t *size) {
   return amd_encoder_get_extra_data_internal(data, extra_data, size);
 }
 
-/* 编码器 Info 结构体 */
+/* Encoder info structs */
 struct obs_encoder_info amd_encoder_info = {
     .id = "h264_amf_native",
     .type = OBS_ENCODER_VIDEO,

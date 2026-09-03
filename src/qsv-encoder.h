@@ -10,6 +10,7 @@
 #include <vpl/mfxvideo.h>
 
 #include "ntp-client.h"
+#include "sei-handler.h"
 
 typedef struct qsv_encoder {
   obs_encoder_t *encoder;
@@ -47,14 +48,13 @@ typedef struct qsv_encoder {
   /* Header Data */
   uint8_t *extra_data;
   size_t extra_data_size;
-  bool extra_data_ready; // 标记 extra_data 是否已从码流提取
+  bool extra_data_ready; // extra_data has been pulled from the bitstream
 
   /* NTP Synchronization */
-  struct ntp_client ntp_client;     // NTP客户端
-  uint64_t last_ntp_sync_time;      // 上次NTP同步时间
-  ntp_timestamp_t current_ntp_time; // 当前编码帧的NTP时间戳
-  bool ntp_enabled;                 // NTP是否启用
-  uint32_t ntp_sync_interval_ms;    /* NTP同步间隔（毫秒）*/
+  struct ntp_client ntp_client;     // NTP client
+  ntp_timestamp_t current_ntp_time; // NTP timestamp of the frame being encoded
+  bool ntp_enabled;                 // Whether NTP is enabled
+  uint32_t ntp_sync_interval_ms;    /* NTP sync interval (ms) */
 
 } qsv_encoder_t;
 
