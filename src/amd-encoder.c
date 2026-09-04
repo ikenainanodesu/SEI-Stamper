@@ -114,8 +114,7 @@ static uint8_t *amd_extradata_to_annexb(const uint8_t *extradata,
     return out;
   }
 
-  /* AVCDecoderConfigurationRecord: H.264 only, configurationVersion must
-   * be 1. */
+  /* AVCDecoderConfigurationRecord: configurationVersion must be 1. */
   if (codec_type != 0 || extradata[0] != 0x01 || extradata_size < 7)
     return NULL;
 
@@ -599,8 +598,7 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
     param_sets_end = find_parameter_sets_end_amd(
         enc->packet->data, enc->packet->size, enc->codec_type, &sps_inband);
 
-  /* Re-inject the parameter sets whenever the keyframe carries no SPS. Not
-   * gated on the SEI: a keyframe with no NTP to stamp still has to be
+  /* Not gated on the SEI: a keyframe with no NTP to stamp still has to be
    * decodable by a mid-stream MPEG-TS/SRT joiner. */
   size_t params_prefix = 0;
   if (keyframe && !sps_inband)
