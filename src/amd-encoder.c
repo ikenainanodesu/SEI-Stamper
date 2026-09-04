@@ -92,15 +92,12 @@ static bool amd_build_sei_nal_unit(uint8_t *payload, size_t payload_size,
 #endif
 
 /*
- * Convert FFmpeg encoder extradata to a raw Annex-B byte stream so it can be
- * prepended inline at each keyframe. h264_amf/hevc_amf emit Annex-B extradata
- * under AV_CODEC_FLAG_GLOBAL_HEADER, which is the path we use; the AVCC branch
- * is a defensive fallback should that ever change (HEVC's HVCC is not parsed -
- * it returns NULL, harmless for the Annex-B case).
- * Returns a bmalloc'd buffer, or NULL on failure.
+ * h264_amf/hevc_amf hand out Annex-B extradata; the AVCC branch is a
+ * defensive fallback, gated to H.264 because HEVC's HVCC also begins with
+ * configurationVersion 0x01 and would be mis-parsed as AVCC garbage.
  */
 static uint8_t *amd_extradata_to_annexb(const uint8_t *extradata,
-                                        size_t extradata_size,
+                                        size_t extradata_size, int codec_type,
                                         size_t *out_size) {
   *out_size = 0;
   if (!extradata || extradata_size < 4)
@@ -117,8 +114,9 @@ static uint8_t *amd_extradata_to_annexb(const uint8_t *extradata,
     return out;
   }
 
-  /* AVCDecoderConfigurationRecord: configurationVersion must be 1. */
-  if (extradata[0] != 0x01 || extradata_size < 7)
+  /* AVCDecoderConfigurationRecord: H.264 only, configurationVersion must
+   * be 1. */
+  if (codec_type != 0 || extradata[0] != 0x01 || extradata_size < 7)
     return NULL;
 
   /* Layout:
@@ -221,12 +219,15 @@ static const uint8_t *find_nal_start_code_amd(const uint8_t *data, size_t size,
   return NULL;
 }
 
-/* Find the end of the parameter sets (after SPS/PPS/VPS) */
+/* Find the end of the leading AUD/parameter-set run and report whether an
+ * actual SPS is in it — an AUD alone must not count as "params in-band". */
 static size_t find_parameter_sets_end_amd(const uint8_t *data, size_t size,
-                                          int codec_type) {
+                                          int codec_type, bool *sps_seen) {
   const uint8_t *current = data;
   size_t remaining = size;
   size_t last_param_end = 0;
+
+  *sps_seen = false;
 
   while (remaining > 0) {
     size_t sc_size = 0;
@@ -249,10 +250,14 @@ static size_t find_parameter_sets_end_amd(const uint8_t *data, size_t size,
       nal_type = nal_data[0] & 0x1F;
       is_param_set = (nal_type == H264_NAL_SPS || nal_type == H264_NAL_PPS ||
                       nal_type == 9);
+      if (nal_type == H264_NAL_SPS)
+        *sps_seen = true;
     } else if (codec_type == 1) { // H.265
       nal_type = (nal_data[0] >> 1) & 0x3F;
       is_param_set = (nal_type == H265_NAL_VPS || nal_type == H265_NAL_SPS ||
                       nal_type == H265_NAL_PPS || nal_type == 35);
+      if (nal_type == H265_NAL_SPS)
+        *sps_seen = true;
     } else {
       return 0;
     }
@@ -414,11 +419,10 @@ void *amd_encoder_create_internal(obs_data_t *settings,
   enc->codec_context->bit_rate = enc->bitrate * 1000;
   enc->codec_context->gop_size = enc->keyint;
   enc->codec_context->max_b_frames = enc->bframes;
-  /* H.264/H.265 only: without this, avcodec>=62 leaves extradata empty and
-   * OBS's mpegts/SRT muxer aborts with "Failed to retrieve headers". It also
-   * stops FFmpeg emitting the params in-band, which the encode path re-injects
-   * at each keyframe below. AV1 has no Annex-B parameter sets to re-inject, so
-   * it keeps its in-band sequence header (flag left off). */
+  /* No-op for amfenc (it never reads this flag: extradata is always
+   * populated, and in-band header emission follows AMF driver defaults) —
+   * kept so extradata survives if avcodec ever gates it on GLOBAL_HEADER
+   * the way nvenc does. */
   if (enc->codec_type == 0 || enc->codec_type == 1)
     enc->codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -478,7 +482,8 @@ void *amd_encoder_create_internal(obs_data_t *settings,
 
     if (enc->codec_type == 0 || enc->codec_type == 1) {
       enc->inline_params = amd_extradata_to_annexb(
-          enc->extra_data, enc->extra_data_size, &enc->inline_params_size);
+          enc->extra_data, enc->extra_data_size, enc->codec_type,
+          &enc->inline_params_size);
       if (enc->inline_params && enc->inline_params_size > 0) {
         encoder_log(LOG_INFO, enc,
                     "Inline parameter set payload built: %zu bytes (Annex-B)",
@@ -586,18 +591,19 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
                 "skipping SEI insertion", frame->pts);
   }
 
-  /* Assemble the packet: parameter sets -> SEI -> slice data */
+  /* Assemble the packet: [leading AUD/params] -> [injected params] -> SEI ->
+   * slice data */
   size_t param_sets_end = 0;
+  bool sps_inband = false;
   if (keyframe)
     param_sets_end = find_parameter_sets_end_amd(
-        enc->packet->data, enc->packet->size, enc->codec_type);
-  bool params_inband = param_sets_end > 0 && param_sets_end < enc->packet->size;
+        enc->packet->data, enc->packet->size, enc->codec_type, &sps_inband);
 
-  /* Re-inject the parameter sets whenever GLOBAL_HEADER kept FFmpeg from
-   * emitting them in-band. Not gated on the SEI: a keyframe with no NTP to
-   * stamp still has to be decodable by a mid-stream MPEG-TS/SRT joiner. */
+  /* Re-inject the parameter sets whenever the keyframe carries no SPS. Not
+   * gated on the SEI: a keyframe with no NTP to stamp still has to be
+   * decodable by a mid-stream MPEG-TS/SRT joiner. */
   size_t params_prefix = 0;
-  if (keyframe && !params_inband)
+  if (keyframe && !sps_inband)
     params_prefix = enc->inline_params_size;
 
   size_t total_size = params_prefix + sei_nal_size + enc->packet->size;
@@ -607,15 +613,18 @@ bool amd_encoder_encode_internal(void *data, struct encoder_frame *frame,
     enc->packet_buffer_size = total_size;
   }
 
+  /* Any leading AUD/param run stays first — the AUD must open the AU. */
   size_t offset = 0;
-  size_t body_start = params_inband ? param_sets_end : 0;
-  if (params_inband) {
+  size_t body_start = param_sets_end;
+  if (param_sets_end > 0) {
     memcpy(enc->packet_buffer, enc->packet->data, param_sets_end);
     offset = param_sets_end;
-  } else if (params_prefix > 0) {
-    memcpy(enc->packet_buffer, enc->inline_params, params_prefix);
-    offset = params_prefix;
-  } else if (keyframe) {
+  }
+  if (params_prefix > 0) {
+    memcpy(enc->packet_buffer + offset, enc->inline_params, params_prefix);
+    offset += params_prefix;
+  } else if (keyframe && !sps_inband &&
+             (enc->codec_type == 0 || enc->codec_type == 1)) {
     encoder_log(LOG_DEBUG, enc,
                 "Keyframe carries no parameter sets (extradata unusable)");
   }

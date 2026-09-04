@@ -38,9 +38,8 @@ typedef struct amd_encoder {
   uint8_t *extra_data;
   size_t extra_data_size;
 
-  /* Parameter sets in Annex-B form, prepended to each keyframe packet:
-   * AV_CODEC_FLAG_GLOBAL_HEADER stops FFmpeg emitting them inline, which
-   * MPEG-TS/SRT consumers joining mid-stream need. */
+  /* Parameter sets in Annex-B form, injected into keyframes that carry no
+   * SPS so MPEG-TS/SRT consumers joining mid-stream can decode. */
   uint8_t *inline_params;
   size_t inline_params_size;
 
