@@ -663,6 +663,34 @@ static void test_ntp_conversion_known_values(void) {
             "2024-06-15 12:00:00 conversion");
 }
 
+static void test_ntp_sync_anchor_is_offset_corrected(void) {
+  printf("  NTP sync anchor = T4 + offset (== T3 + delay/2)...\n");
+
+  /* Local clock 30 s behind the server, 18 ms each way on the wire, 4 ms of
+   * server processing. */
+  const uint64_t s = 1000000000ULL, ms = 1000000ULL;
+  uint64_t t1_wall = 1704067200ULL * s;
+  uint64_t t2_ns = t1_wall + 30 * s + 18 * ms;
+  uint64_t t3_ns = t2_ns + 4 * ms;
+  uint64_t t4_wall = t1_wall + 40 * ms;
+
+  /* Mirrors ntp_sync_one_addr */
+  int64_t offset = ((int64_t)(t2_ns - t1_wall) + (int64_t)(t3_ns - t4_wall)) / 2;
+  int64_t delay = (int64_t)(t4_wall - t1_wall) - (int64_t)(t3_ns - t2_ns);
+  uint64_t anchor_ns = (uint64_t)((int64_t)t4_wall + offset);
+
+  ASSERT_EQ(offset, (int64_t)(30 * s), "offset recovers the 30 s clock error");
+  ASSERT_EQ(delay, (int64_t)(36 * ms), "delay excludes server processing");
+  ASSERT_EQ(anchor_ns, t3_ns + (uint64_t)delay / 2, "anchor == T3 + delay/2");
+  ASSERT_EQ(anchor_ns - t3_ns, 18 * ms,
+            "raw T3 would trail the anchor by half the round trip");
+
+  ntp_timestamp_t anchor;
+  ns_to_ntp(anchor_ns, &anchor);
+  ASSERT_NEAR(ntp_to_ns(&anchor), anchor_ns, 1,
+              "anchor survives the NTP timestamp round-trip");
+}
+
 /* ─── Main ─────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -673,6 +701,7 @@ int main(void) {
   test_ntp_epoch_conversion_roundtrip();
   test_ntp_fractional_precision();
   test_ntp_conversion_known_values();
+  test_ntp_sync_anchor_is_offset_corrected();
   test_ntp_sanity_check();
 
   printf("\n[SEI payload]\n");

@@ -48,7 +48,7 @@ typedef struct ntp_client {
   bool is_initialized; /* Whether initialised */
   bool is_synced;      /* Whether synced */
 
-  ntp_timestamp_t last_sync_time; /* NTP time at the last sync */
+  ntp_timestamp_t last_sync_time; /* Offset-corrected NTP time at last_sync_local_time */
   uint64_t last_sync_local_time;  /* os_gettime_ns at the last sync */
   int64_t time_offset_ns;         /* Time offset (ns) */
 
@@ -99,7 +99,7 @@ bool ntp_client_sync(ntp_client_t *client);
 bool ntp_client_get_time(ntp_client_t *client, ntp_timestamp_t *timestamp);
 
 /*
- * Get the time offset (local time - NTP time)
+ * Get the time offset (NTP time - local wall clock)
  * Params:
  *   client - NTP client context
  * Returns:

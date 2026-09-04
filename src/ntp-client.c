@@ -251,17 +251,24 @@ static bool ntp_sync_one_addr(ntp_client_t *client, struct addrinfo *ai) {
 
   /* Standard NTP offset, on wall-clock time so it shares the server's base. */
   int64_t offset = ((int64_t)(t2_ns - t1_wall) + (int64_t)(t3_ns - t4_wall)) / 2;
+  int64_t delay = (int64_t)(t4_wall - t1_wall) - (int64_t)(t3_ns - t2_ns);
+
+  /* Anchor at T4 + offset (== T3 + delay/2): raw T3 sits half a round trip in
+   * the past, a per-network-path skew between encoders. */
+  ntp_timestamp_t anchor;
+  ns_to_ntp((uint64_t)((int64_t)t4_wall + offset), &anchor);
 
   pthread_mutex_lock(&client->state_lock);
   client->time_offset_ns = offset;
   client->last_sync_local_time = t4_mono;
-  client->last_sync_time = t3;
+  client->last_sync_time = anchor;
   client->is_synced = true;
   client->sync_count++;
   pthread_mutex_unlock(&client->state_lock);
 
-  ntp_log(LOG_INFO, "NTP sync successful (offset: %lld ms, count: %u)",
-          offset / 1000000, client->sync_count);
+  ntp_log(LOG_INFO,
+          "NTP sync successful (offset: %lld ms, delay: %lld ms, count: %u)",
+          offset / 1000000, delay / 1000000, client->sync_count);
   success = true;
 
 done:
