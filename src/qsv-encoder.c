@@ -626,7 +626,7 @@ void *qsv_encoder_create_internal(obs_data_t *settings,
   ntp_client_init(&enc->ntp_client, ntp_server, ntp_port);
   enc->ntp_enabled = true; // Always on for stamper
   enc->ntp_sync_interval_ms =
-      (uint32_t)obs_data_get_int(settings, "ntp_sync_interval");
+      (uint32_t)obs_data_get_int(settings, "ntp_sync_interval_ms");
   if (enc->ntp_sync_interval_ms == 0)
     enc->ntp_sync_interval_ms = 60000; // default 60 s
   ntp_client_start_background_sync(&enc->ntp_client, enc->ntp_sync_interval_ms);
@@ -1027,7 +1027,7 @@ static void qsv_get_defaults(obs_data_t *settings) {
   obs_data_set_default_int(settings, "keyint_sec", 2);
   obs_data_set_default_int(settings, "bframes", 2);
   obs_data_set_default_string(settings, "ntp_server", "time.windows.com");
-  obs_data_set_default_int(settings, "ntp_sync_interval", 60000); // 60 s
+  obs_data_set_default_int(settings, "ntp_sync_interval_ms", 60000); // 60 s
 }
 
 static obs_properties_t *qsv_properties(void *unused) {
@@ -1037,7 +1037,7 @@ static obs_properties_t *qsv_properties(void *unused) {
                          1);
   obs_properties_add_int(props, "bframes", "B-Frames", 0, 4, 1);
   obs_properties_add_text(props, "ntp_server", "NTP Server", OBS_TEXT_DEFAULT);
-  obs_properties_add_int(props, "ntp_sync_interval", "NTP Sync Interval (ms)",
+  obs_properties_add_int(props, "ntp_sync_interval_ms", "NTP Sync Interval (ms)",
                          1000, 600000, 1000); // 1 s to 10 min
   return props;
 }
