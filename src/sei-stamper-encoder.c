@@ -353,33 +353,32 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  /* NTP is refreshed on a background thread; just read the latest here. */
-  bool ntp_valid = enc->ntp_enabled && keyframe &&
-                   ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
-
-  if (ntp_valid) {
-    uint8_t *payload = NULL;
-    size_t payload_size = 0;
-    if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
-                              &payload_size)) {
-      /* Pick the SEI NAL type from the encoder type */
-      sei_nal_type_t nal_type = SEI_NAL_H264;
-      if (enc->codec_type == SEI_STAMPER_CODEC_H265) {
-        nal_type = SEI_NAL_H265_PREFIX;
-      }
-      /* AV1 uses a different SEI mechanism; skipped for now */
-      if (enc->codec_type != SEI_STAMPER_CODEC_AV1) {
-        if (build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal,
-                               &sei_nal_size)) {
-          has_sei = true;
+  if (enc->ntp_enabled && keyframe) {
+    /* NTP is refreshed on a background thread; just read the latest here. */
+    if (ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time)) {
+      uint8_t *payload = NULL;
+      size_t payload_size = 0;
+      if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
+                                &payload_size)) {
+        /* Pick the SEI NAL type from the encoder type */
+        sei_nal_type_t nal_type = SEI_NAL_H264;
+        if (enc->codec_type == SEI_STAMPER_CODEC_H265) {
+          nal_type = SEI_NAL_H265_PREFIX;
         }
+        /* AV1 uses a different SEI mechanism; skipped for now */
+        if (enc->codec_type != SEI_STAMPER_CODEC_AV1) {
+          if (build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal,
+                                 &sei_nal_size)) {
+            has_sei = true;
+          }
+        }
+        bfree(payload);
       }
-      bfree(payload);
+    } else {
+      encoder_log(LOG_WARNING, enc,
+                  "Keyframe at PTS=%lld but NTP not synced, skipping SEI insertion",
+                  frame->pts);
     }
-  } else if (enc->ntp_enabled && keyframe) {
-    encoder_log(LOG_WARNING, enc,
-                "Keyframe at PTS=%lld but NTP not synced, skipping SEI insertion",
-                frame->pts);
   }
 
   /* Assemble the final packet - the SEI must land after the AUD/parameter

@@ -930,31 +930,30 @@ bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  /* NTP is refreshed on a background thread; just read the latest here. */
-  bool ntp_valid =
-      keyframe && ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
+  if (keyframe) {
+    /* NTP is refreshed on a background thread; just read the latest here. */
+    if (ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time)) {
+      uint8_t *payload = NULL;
+      size_t payload_size = 0;
+      if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
+                                &payload_size)) {
+        sei_nal_type_t nal_type = (enc->codec_type == 1) ? SEI_NAL_H265_PREFIX : SEI_NAL_H264;
+        build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal, &sei_nal_size);
+        bfree(payload);
 
-  if (ntp_valid) {
-    uint8_t *payload = NULL;
-    size_t payload_size = 0;
-    if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
-                              &payload_size)) {
-      sei_nal_type_t nal_type = (enc->codec_type == 1) ? SEI_NAL_H265_PREFIX : SEI_NAL_H264;
-      build_sei_nal_unit(payload, payload_size, nal_type, &sei_nal, &sei_nal_size);
-      bfree(payload);
-
-      blog(LOG_DEBUG,
-           "[QSV Native] SEI stamped: PTS=%lld NTP_sec=%u (0x%08X) NTP_frac=%u keyframe=%d",
-           frame->pts,
-           enc->current_ntp_time.seconds, enc->current_ntp_time.seconds,
-           enc->current_ntp_time.fraction, keyframe);
+        blog(LOG_DEBUG,
+             "[QSV Native] SEI stamped: PTS=%lld NTP_sec=%u (0x%08X) NTP_frac=%u keyframe=%d",
+             frame->pts,
+             enc->current_ntp_time.seconds, enc->current_ntp_time.seconds,
+             enc->current_ntp_time.fraction, keyframe);
+      } else {
+        blog(LOG_ERROR, "[QSV Native] Failed to build NTP SEI payload");
+      }
     } else {
-      blog(LOG_ERROR, "[QSV Native] Failed to build NTP SEI payload");
+      blog(LOG_WARNING,
+           "[QSV Native] Keyframe at PTS=%lld but NTP not synced, "
+           "skipping SEI insertion", frame->pts);
     }
-  } else if (keyframe) {
-    blog(LOG_WARNING,
-         "[QSV Native] Keyframe at PTS=%lld but NTP not synced, "
-         "skipping SEI insertion", frame->pts);
   }
 
   /* Copy to OBS packet with correct SEI insertion position */
