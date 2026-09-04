@@ -592,8 +592,7 @@ bool nvenc_encoder_encode_internal(void *data, struct encoder_frame *frame,
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  /* NTP is refreshed on a background thread; read it only on keyframes, where
-   * the SEI goes, so an unsynced client warns per keyframe, not per frame. */
+  /* NTP is refreshed on a background thread; just read the latest here. */
   bool ntp_valid =
       keyframe && ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
 

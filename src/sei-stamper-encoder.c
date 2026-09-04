@@ -353,8 +353,7 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  /* NTP is refreshed on a background thread; read it only on keyframes, where
-   * the SEI goes, and stamp nothing the client could not time. */
+  /* NTP is refreshed on a background thread; just read the latest here. */
   bool ntp_valid = enc->ntp_enabled && keyframe &&
                    ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
 
