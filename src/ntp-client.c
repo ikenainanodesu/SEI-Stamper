@@ -188,6 +188,10 @@ static bool ntp_sync_one_addr(ntp_client_t *client, struct addrinfo *ai) {
   packet.transmit_timestamp.fraction =
       htonl_swap(packet.transmit_timestamp.fraction);
 
+  /* recvfrom reuses the packet buffer, so keep the wire-order T1 for the
+   * originate-echo check below. */
+  ntp_timestamp_t t1_wire = packet.transmit_timestamp;
+
   int ret = sendto(sock, (const char *)&packet, sizeof(packet), 0, ai->ai_addr,
                    (int)ai->ai_addrlen);
   if (ret < 0) {
@@ -221,6 +225,18 @@ static bool ntp_sync_one_addr(ntp_client_t *client, struct addrinfo *ai) {
   if (mode != 4 || li == 3 || packet.stratum == 0 || packet.stratum >= 16) {
     ntp_log(LOG_WARNING, "Rejecting NTP response: mode=%u li=%u stratum=%u",
             mode, li, packet.stratum);
+    goto done;
+  }
+
+  /* A genuine reply echoes our T1 verbatim in originate (both still in wire
+   * order) — this pairs the reply to the request like a nonce, rejecting
+   * stale, cross-talk, or spoofed datagrams without involving the local
+   * clock. */
+  if (packet.originate_timestamp.seconds != t1_wire.seconds ||
+      packet.originate_timestamp.fraction != t1_wire.fraction) {
+    ntp_log(LOG_WARNING,
+            "Rejecting NTP response: originate timestamp does not echo our "
+            "request");
     goto done;
   }
 
