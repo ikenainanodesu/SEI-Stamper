@@ -347,17 +347,18 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
 
   *received_packet = true;
 
-  /* NTP is refreshed on a background thread; just read the latest here. */
-  if (enc->ntp_enabled) {
-    ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
-  }
-
   /* SEI insertion (timestamps on keyframes only) */
+  bool keyframe = (enc->packet->flags & AV_PKT_FLAG_KEY) != 0;
   bool has_sei = false;
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  if (enc->ntp_enabled && (enc->packet->flags & AV_PKT_FLAG_KEY)) {
+  /* NTP is refreshed on a background thread; read it only on keyframes, where
+   * the SEI goes, and stamp nothing the client could not time. */
+  bool ntp_valid = enc->ntp_enabled && keyframe &&
+                   ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
+
+  if (ntp_valid) {
     uint8_t *payload = NULL;
     size_t payload_size = 0;
     if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
@@ -376,6 +377,10 @@ static bool sei_stamper_encoder_encode(void *data, struct encoder_frame *frame,
       }
       bfree(payload);
     }
+  } else if (enc->ntp_enabled && keyframe) {
+    encoder_log(LOG_WARNING, enc,
+                "Keyframe at PTS=%lld but NTP not synced, skipping SEI insertion",
+                frame->pts);
   }
 
   /* Assemble the final packet - the SEI must land after the AUD/parameter

@@ -863,17 +863,8 @@ bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
   /* Packet Ready */
   *received_packet = true;
 
-  /* NTP is refreshed on a background thread; just read the latest here. */
-  bool ntp_valid = ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
-
-  /* SEI Insertion */
-  // Check if IDR/I frame to insert SEI.
-  // MFXBS FrameType check.
   bool keyframe = (enc->mfxBS.FrameType & MFX_FRAMETYPE_I) ||
                   (enc->mfxBS.FrameType & MFX_FRAMETYPE_IDR);
-
-  blog(LOG_INFO, "[QSV Native] Frame encoded: FrameType=0x%x, keyframe=%s",
-       enc->mfxBS.FrameType, keyframe ? "TRUE" : "FALSE");
 
   /* On the first keyframe, build extra_data from the bitstream if absent */
   if (keyframe && !enc->extra_data_ready) {
@@ -939,7 +930,12 @@ bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  if (ntp_valid && keyframe) {
+  /* NTP is refreshed on a background thread; read it only on keyframes, where
+   * the SEI goes, so an unsynced client warns per keyframe, not per frame. */
+  bool ntp_valid =
+      keyframe && ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
+
+  if (ntp_valid) {
     uint8_t *payload = NULL;
     size_t payload_size = 0;
     if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
@@ -956,9 +952,9 @@ bool qsv_encoder_encode_internal(void *data, struct encoder_frame *frame,
     } else {
       blog(LOG_ERROR, "[QSV Native] Failed to build NTP SEI payload");
     }
-  } else if (!ntp_valid) {
+  } else if (keyframe) {
     blog(LOG_WARNING,
-         "[QSV Native] Frame at PTS=%lld but NTP time not available, "
+         "[QSV Native] Keyframe at PTS=%lld but NTP not synced, "
          "skipping SEI insertion", frame->pts);
   }
 

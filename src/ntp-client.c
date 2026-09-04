@@ -371,7 +371,6 @@ bool ntp_client_get_time(ntp_client_t *client, ntp_timestamp_t *timestamp) {
   pthread_mutex_unlock(&client->state_lock);
 
   if (!synced) {
-    ntp_log(LOG_WARNING, "get_time called but not synced yet");
     return false;
   }
 

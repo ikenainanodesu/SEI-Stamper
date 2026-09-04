@@ -586,16 +586,18 @@ bool nvenc_encoder_encode_internal(void *data, struct encoder_frame *frame,
 
   *received_packet = true;
 
-  /* NTP is refreshed on a background thread; just read the latest here. */
-  bool ntp_valid = ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
-
   /* SEI insertion (keyframes only — IVS player is hot-loop sensitive to
    * per-frame SEI) */
   bool keyframe = (enc->packet->flags & AV_PKT_FLAG_KEY) != 0;
   uint8_t *sei_nal = NULL;
   size_t sei_nal_size = 0;
 
-  if (ntp_valid && keyframe) {
+  /* NTP is refreshed on a background thread; read it only on keyframes, where
+   * the SEI goes, so an unsynced client warns per keyframe, not per frame. */
+  bool ntp_valid =
+      keyframe && ntp_client_get_time(&enc->ntp_client, &enc->current_ntp_time);
+
+  if (ntp_valid) {
     uint8_t *payload = NULL;
     size_t payload_size = 0;
     if (build_ntp_sei_payload(frame->pts, &enc->current_ntp_time, &payload,
@@ -611,9 +613,9 @@ bool nvenc_encoder_encode_internal(void *data, struct encoder_frame *frame,
                   enc->current_ntp_time.seconds, enc->current_ntp_time.seconds,
                   enc->current_ntp_time.fraction, keyframe);
     }
-  } else if (!ntp_valid) {
+  } else if (keyframe) {
     encoder_log(LOG_WARNING, enc,
-                "[NVENC] Frame at PTS=%lld but NTP time not available, "
+                "[NVENC] Keyframe at PTS=%lld but NTP not synced, "
                 "skipping SEI insertion", frame->pts);
   }
 
