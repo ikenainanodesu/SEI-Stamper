@@ -446,10 +446,10 @@ void *nvenc_encoder_create_internal(obs_data_t *settings,
   enc->codec_context->gop_size = enc->keyint;
   enc->codec_context->max_b_frames = enc->bframes;
   /* H.264/H.265 only: without this, avcodec>=62 leaves extradata empty and
-   * OBS's mpegts/SRT/FLV muxer aborts with "Failed to retrieve headers". It
-   * also stops FFmpeg emitting the params in-band, which the encode path
-   * re-injects at each keyframe below. AV1 has no Annex-B parameter sets to
-   * re-inject, so it keeps its in-band sequence header (flag left off). */
+   * OBS's mpegts/SRT muxer aborts with "Failed to retrieve headers". It also
+   * stops FFmpeg emitting the params in-band, which the encode path re-injects
+   * at each keyframe below. AV1 has no Annex-B parameter sets to re-inject, so
+   * it keeps its in-band sequence header (flag left off). */
   if (enc->codec_type == 0 || enc->codec_type == 1)
     enc->codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
