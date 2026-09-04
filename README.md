@@ -53,8 +53,8 @@ The release package includes:
 
 ### Prerequisites
 
-- OBS Studio 32.0.4 or later
-- Latest validated build environment: OBS Studio 32.1.2
+- OBS Studio 32.2 or later (the plugin links against FFmpeg 8 / libavcodec 62, which older releases don't ship)
+- Latest validated build environment: OBS Studio 32.2.2 with `windows-deps-2026-08-26-x64`
 - Windows 10/11 (64-bit)
 
 ### Manual Install Steps
@@ -188,6 +188,21 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 ---
 
+## Building from source
+
+Requirements: CMake 3.20+, Visual Studio 2022 (C++ desktop workload), an OBS Studio 32.2 source tree with `libobs` built, and its deps bundle — FFmpeg 8, i.e. `windows-deps-2026-05-21-x64` or newer. Older bundles ship libavcodec 61 and the configure step refuses them, because a DLL linked against them cannot load in OBS 32.2.
+
+```powershell
+mkdir build
+cd build
+cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
+cmake --build . --config Release
+```
+
+`OBS_BUILD_DIR` defaults to `OBS_SOURCE_DIR\build` and `OBS_DEPS_DIR` to the newest `obs-deps-*` / `windows-deps-*` bundle under `OBS_SOURCE_DIR\.deps`; set either with `-D` or an environment variable of the same name to override. `build_and_install.bat` runs the same steps (reading `OBS_SOURCE_DIR` from the environment) and stages an installable tree under `out\obs-studio\`. The standalone unit tests need no OBS or GPU: `tests\run_tests.bat`.
+
+---
+
 ## Disclaimer
 
 Portions of this project's code and documentation were generated with the assistance of AI tools. By using this software, you acknowledge and agree that:
@@ -205,6 +220,38 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 ## Release Notes
+
+### v1.3.0 (2026-09-04)
+
+**🔧 NTP reliability (cross-platform):**
+- 🪟 **Fixed NTP on Windows**: `SO_RCVTIMEO` was set with a `struct timeval`, but Winsock expects a `DWORD` of milliseconds — it read `tv_sec` (5) as a **5 ms** timeout, so every sync failed with `WSAETIMEDOUT`. NTP never worked on Windows before this.
+- 🌐 **Try every resolved address**: `getaddrinfo` can return several addresses (often an IPv6 record first); the client now tries each until one answers instead of only the first.
+- 🛡️ **Response validation**: reject Kiss-o'-Death (stratum 0), unsynchronized (stratum ≥ 16) and non-server-mode replies instead of anchoring on a bogus time.
+- 🐛 **Receive error handling**: a failed `recvfrom` no longer slips past a signed/unsigned length check; failures log the socket error code so the cause is visible.
+- 🔒 **Request/reply pairing**: a reply must echo our originate timestamp (T1), so a stale, cross-talk or spoofed datagram can no longer re-anchor the clock.
+- 🎛️ **Sync interval setting fixed**: the unified encoder saves `ntp_sync_interval_ms` but the backends read `ntp_sync_interval`, so the UI knob was dead and the interval always fell back to the hard-coded 60 s.
+- 🎯 **Offset actually applied**: the clock was anchored at the server's transmit time (T3) and ignored the computed offset, so it reported a time half a round trip in the past — a skew that differs per network path, i.e. between encoders. It now anchors at the offset-corrected receive time (T4 + offset) and logs the round-trip delay alongside the offset.
+
+**🚀 Non-blocking sync:**
+- ⏱️ **Background NTP thread**: sync now runs on its own thread (opt-in `ntp_client_start_background_sync`), so the network round-trip never blocks the encode path; encoders just read the latest cached time. State is mutex-guarded for a consistent snapshot.
+- 🔇 **NTP read only on keyframes**: every encoder fetched the NTP time for every frame, so an unreachable server produced two warnings per frame (about 120/s at 60 fps). The lookup and the warning now happen only where the SEI is stamped — on keyframes — and the software encoder no longer stamps a zeroed timestamp while the client is unsynced.
+- 🔧 **Configurable NTP port** via the `ntp_port` setting (defaults to 123).
+
+**🎞️ Encoding:**
+- 🔑 **Self-contained keyframes (NVENC & AMF)**: SPS/PPS(/VPS) are re-injected into any keyframe that doesn't already carry an SPS — independent of SEI presence, and a keyframe led by a lone AUD no longer counts as having params in-band — so a mid-stream MPEG-TS/SRT joiner can always decode from the next keyframe.
+- 🧯 **AMF on avcodec 62**: the AMF path set no global header, so newer FFmpeg failed with "Failed to retrieve headers"; header handling now mirrors NVENC (extradata → Annex-B + keyframe re-injection). Not yet verified on AMD hardware.
+- 🚧 **AVCC fallback gated to H.264**: HEVC HVCC extradata (which also starts with `configurationVersion 0x01`) is rejected instead of mis-parsed as AVCC parameter sets.
+- 🛠️ **AMF preset mapping**: the unified encoder's `fast` preset is mapped to AMF's `speed` (AMF's `quality` option rejects `fast`).
+
+**🧩 Compatibility:**
+- ✅ **FFmpeg 8 / avcodec 62**: use `AV_FRAME_FLAG_KEY` instead of the removed `AVFrame::key_frame` field so the receiver source builds on current FFmpeg.
+
+**🏗️ Build:**
+- ⚙️ **Portable CMake**: `OBS_SOURCE_DIR` / `OBS_BUILD_DIR` / `OBS_DEPS_DIR` (flags or environment variables) replace the hard-wired nested `obs-studio-master` layout; deps discovery also covers the newer `windows-deps-*` bundles, and configure refuses bundles older than FFmpeg 8 (libavcodec 62 — `windows-deps-2026-05-21` and newer), since a DLL linked against libavcodec 61 cannot load in OBS 32.2. `build_and_install.bat` takes the same variables from the environment.
+
+**📝 Housekeeping:**
+- Source comments translated to English throughout.
+- 🧪 **Standalone unit tests** under `tests/` (`run_tests.bat`, plain `cl`/`gcc` — no OBS or GPU needed): NTP conversion and sync anchor, SEI payload layout, NAL scanning, extradata conversion. 60 checks.
 
 ### v1.2.3-beta (2026-06-07)
 
@@ -269,5 +316,5 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Current Version**: 1.2.3-beta
-**Last Updated**: 2026-06-07
+**Current Version**: 1.3.0
+**Last Updated**: 2026-09-04

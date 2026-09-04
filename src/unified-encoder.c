@@ -14,26 +14,26 @@
 #include "qsv-encoder.h"
 #include <util/dstr.h>
 
-/* 日志宏 */
+/* Logging macros */
 #define encoder_log(level, enc, format, ...)                                   \
   blog(level, "[Unified Encoder: '%s'] " format,                               \
        obs_encoder_get_name(enc->encoder), ##__VA_ARGS__)
 
-/* 硬件类型名称 */
+/* Hardware type names */
 static const char *hardware_type_names[] = {
     "Intel QuickSync", // HARDWARE_TYPE_INTEL
     "NVIDIA NVENC",    // HARDWARE_TYPE_NVIDIA
     "AMD AMF",         // HARDWARE_TYPE_AMD
 };
 
-/* 编码格式名称 */
+/* Codec format names */
 static const char *codec_type_names[] = {
     "H.264", // CODEC_TYPE_H264
     "H.265", // CODEC_TYPE_H265
     "AV1",   // CODEC_TYPE_AV1
 };
 
-/* 编码格式对应的codec字符串 */
+/* Codec strings for each codec format */
 static const char *codec_type_to_string(codec_type_t type) {
   switch (type) {
   case CODEC_TYPE_H264:
@@ -47,7 +47,7 @@ static const char *codec_type_to_string(codec_type_t type) {
   }
 }
 
-/* 硬件编码器名称映射 */
+/* Hardware encoder name map */
 static const char *get_encoder_name(hardware_type_t hw, codec_type_t codec) {
   switch (hw) {
   case HARDWARE_TYPE_INTEL:
@@ -89,18 +89,18 @@ static const char *get_encoder_name(hardware_type_t hw, codec_type_t codec) {
 }
 
 /*===========================================================================
- * 创建编码器
+ * Create the encoder
  *===========================================================================*/
 
 void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
   unified_encoder_t *enc = bzalloc(sizeof(unified_encoder_t));
   enc->encoder = encoder;
 
-  // 读取用户选择的硬件类型
+  // Read the hardware type the user selected
   enc->hardware_type =
       (hardware_type_t)obs_data_get_int(settings, "hardware_type");
 
-  // 从encoder的ID来确定codec类型（最可靠的方式）
+  // Determine the codec type from the encoder ID (the most reliable way)
   const char *encoder_id = obs_encoder_get_id(encoder);
   blog(LOG_INFO, "[Unified Encoder] Encoder ID: %s",
        encoder_id ? encoder_id : "NULL");
@@ -116,7 +116,7 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
       enc->codec_type = CODEC_TYPE_AV1;
       blog(LOG_INFO, "[Unified Encoder] Detected AV1 from encoder ID");
     } else {
-      // 未知ID，从settings读取作为fallback
+      // Unknown ID; fall back to reading it from settings
       enc->codec_type =
           (codec_type_t)obs_data_get_int(settings, "codec_type_preset");
       blog(LOG_WARNING,
@@ -124,7 +124,7 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
            enc->codec_type);
     }
   } else {
-    // encoder_id为NULL时从settings读取
+    // encoder_id is NULL, so read it from settings
     enc->codec_type =
         (codec_type_t)obs_data_get_int(settings, "codec_type_preset");
     blog(LOG_WARNING,
@@ -132,7 +132,7 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
          enc->codec_type);
   }
 
-  // 验证范围
+  // Validate the range
   if (enc->hardware_type >= HARDWARE_TYPE_COUNT) {
     enc->hardware_type = HARDWARE_TYPE_INTEL;
   }
@@ -147,7 +147,7 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
        hardware_type_names[enc->hardware_type],
        codec_type_names[enc->codec_type]);
 
-  // 获取视频信息
+  // Get the video info
   video_t *video = obs_encoder_video(encoder);
   if (!video) {
     blog(LOG_ERROR, "[Unified Encoder] Failed to get video context");
@@ -155,20 +155,20 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
     return NULL;
   }
 
-  // 根据硬件类型创建底层编码器
+  // Create the backend encoder for the selected hardware type
   bool success = false;
 
   switch (enc->hardware_type) {
   case HARDWARE_TYPE_INTEL: {
 #ifdef ENABLE_VPL
-    // 将codec_type设置到settings中，让QSV encoder能读取到
+    // Put codec_type into settings so the QSV encoder can read it
     obs_data_set_int(settings, "codec_type", enc->codec_type);
 
     enc->qsv_encoder = bzalloc(sizeof(qsv_encoder_t));
     qsv_encoder_t *qsv = (qsv_encoder_t *)enc->qsv_encoder;
     qsv->encoder = encoder;
 
-    // 初始化QSV编码器（需要传递codec类型）
+    // Initialise the QSV encoder (the codec type has to be passed in)
     const char *codec_str = codec_type_to_string(enc->codec_type);
     qsv->encoder = encoder;
     void *result = qsv_encoder_create_internal(settings, encoder);
@@ -189,14 +189,14 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
 
   case HARDWARE_TYPE_NVIDIA: {
 #ifdef ENABLE_NVENC
-    // 将codec_type设置到settings中
+    // Put codec_type into settings
     obs_data_set_int(settings, "codec_type", enc->codec_type);
 
     enc->nvenc_encoder = bzalloc(sizeof(nvenc_encoder_t));
     nvenc_encoder_t *nvenc = (nvenc_encoder_t *)enc->nvenc_encoder;
     nvenc->encoder = encoder;
 
-    // 初始化NVENC编码器
+    // Initialise the NVENC encoder
     void *result = nvenc_encoder_create_internal(settings, encoder);
     if (result) {
       enc->nvenc_encoder = result;
@@ -214,14 +214,14 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
 
   case HARDWARE_TYPE_AMD: {
 #ifdef ENABLE_AMD
-    // 将codec_type设置到settings中
+    // Put codec_type into settings
     obs_data_set_int(settings, "codec_type", enc->codec_type);
 
     enc->amd_encoder = bzalloc(sizeof(amd_encoder_t));
     amd_encoder_t *amd = (amd_encoder_t *)enc->amd_encoder;
     amd->encoder = encoder;
 
-    // 初始化AMD编码器
+    // Initialise the AMD encoder
     void *result = amd_encoder_create_internal(settings, encoder);
     if (result) {
       enc->amd_encoder = result;
@@ -254,7 +254,7 @@ void *unified_encoder_create(obs_data_t *settings, obs_encoder_t *encoder) {
 }
 
 /*===========================================================================
- * 销毁编码器
+ * Destroy the encoder
  *===========================================================================*/
 
 void unified_encoder_destroy(void *data) {
@@ -265,12 +265,12 @@ void unified_encoder_destroy(void *data) {
 
   blog(LOG_INFO, "[Unified Encoder] Destroying encoder");
 
-  // 销毁底层编码器 - create_internal返回的是完整的encoder对象
-  // 所以只需调用对应的destroy函数，不需要额外bfree
+  // create_internal returns a complete encoder object, so its destroy
+  // function is all that is needed - no extra bfree.
 #ifdef ENABLE_VPL
   if (enc->qsv_encoder) {
     qsv_encoder_destroy((qsv_encoder_t *)enc->qsv_encoder);
-    // 不要bfree，因为qsv_encoder_destroy已经释放了
+    // No bfree: qsv_encoder_destroy already freed it
     enc->qsv_encoder = NULL;
   }
 #endif
@@ -278,7 +278,7 @@ void unified_encoder_destroy(void *data) {
 #ifdef ENABLE_NVENC
   if (enc->nvenc_encoder) {
     nvenc_encoder_destroy((nvenc_encoder_t *)enc->nvenc_encoder);
-    // 不要bfree，因为nvenc_encoder_destroy已经释放了
+    // No bfree: nvenc_encoder_destroy already freed it
     enc->nvenc_encoder = NULL;
   }
 #endif
@@ -286,7 +286,7 @@ void unified_encoder_destroy(void *data) {
 #ifdef ENABLE_AMD
   if (enc->amd_encoder) {
     amd_encoder_destroy((amd_encoder_t *)enc->amd_encoder);
-    // 不要bfree，因为amd_encoder_destroy已经释放了
+    // No bfree: amd_encoder_destroy already freed it
     enc->amd_encoder = NULL;
   }
 #endif
@@ -295,7 +295,7 @@ void unified_encoder_destroy(void *data) {
 }
 
 /*===========================================================================
- * 编码视频帧
+ * Encode a video frame
  *===========================================================================*/
 
 bool unified_encoder_encode(void *data, struct encoder_frame *frame,
@@ -314,7 +314,7 @@ bool unified_encoder_encode(void *data, struct encoder_frame *frame,
          unified_frame_count);
   }
 
-  // 转发到相应的底层编码器
+  // Forward to the matching backend encoder
   switch (enc->hardware_type) {
   case HARDWARE_TYPE_INTEL:
 #ifdef ENABLE_VPL
@@ -352,7 +352,7 @@ bool unified_encoder_encode(void *data, struct encoder_frame *frame,
 }
 
 /*===========================================================================
- /* 获取默认设置 - H.264专用 */
+ /* Default settings - H.264 */
 void unified_encoder_get_defaults_h264(obs_data_t *settings) {
   obs_data_set_default_int(settings, "hardware_type", HARDWARE_TYPE_INTEL);
   obs_data_set_default_int(settings, "codec_type_preset", CODEC_TYPE_H264);
@@ -367,7 +367,7 @@ void unified_encoder_get_defaults_h264(obs_data_t *settings) {
   obs_data_set_default_int(settings, "ntp_sync_interval_ms", 60000);
 }
 
-/* 获取默认设置 - H.265专用 */
+/* Default settings - H.265 */
 void unified_encoder_get_defaults_h265(obs_data_t *settings) {
   obs_data_set_default_int(settings, "hardware_type", HARDWARE_TYPE_INTEL);
   obs_data_set_default_int(settings, "codec_type_preset", CODEC_TYPE_H265);
@@ -382,7 +382,7 @@ void unified_encoder_get_defaults_h265(obs_data_t *settings) {
   obs_data_set_default_int(settings, "ntp_sync_interval_ms", 60000);
 }
 
-/* 获取默认设置 - AV1专用 */
+/* Default settings - AV1 */
 void unified_encoder_get_defaults_av1(obs_data_t *settings) {
   obs_data_set_default_int(settings, "hardware_type", HARDWARE_TYPE_INTEL);
   obs_data_set_default_int(settings, "codec_type_preset", CODEC_TYPE_AV1);
@@ -398,33 +398,32 @@ void unified_encoder_get_defaults_av1(obs_data_t *settings) {
 }
 
 /*===========================================================================
- * 通用默认设置（向后兼容）
+ * Generic defaults (backward compatibility)
  *===========================================================================*/
 
 void unified_encoder_get_defaults(obs_data_t *settings) {
-  // 默认硬件类型：Intel QuickSync
+  // Default hardware type: Intel QuickSync
   obs_data_set_default_int(settings, "hardware_type", HARDWARE_TYPE_INTEL);
 
-  // 默认编码格式：H.264
+  // Default codec format: H.264
   obs_data_set_default_int(settings, "codec_type", CODEC_TYPE_H264);
-
-  // 编码参数默认值
+  // Encoding parameter defaults
   obs_data_set_default_int(settings, "bitrate", 2500);         // kbps
   obs_data_set_default_int(settings, "keyint_sec", 2);         // seconds
   obs_data_set_default_int(settings, "bframes", 0);            // B frames
   obs_data_set_default_string(settings, "profile", "high");    // profile
   obs_data_set_default_string(settings, "preset", "balanced"); // preset
 
-  // NTP同步默认值
+  // NTP sync defaults
   obs_data_set_default_bool(settings, "ntp_enabled", true);
   obs_data_set_default_string(settings, "ntp_server", "pool.ntp.org");
   obs_data_set_default_int(settings, "ntp_port", 123);
   obs_data_set_default_int(settings, "ntp_sync_interval_ms",
-                           60000); // 60秒
+                           60000); // 60 s
 }
 
 /*===========================================================================
- * 获取编码器属性（UI）
+ * Encoder properties (UI)
  *===========================================================================*/
 
 obs_properties_t *unified_encoder_properties(void *unused) {
@@ -432,7 +431,7 @@ obs_properties_t *unified_encoder_properties(void *unused) {
 
   obs_properties_t *props = obs_properties_create();
 
-  // 硬件编码器选择下拉框
+  // Hardware encoder dropdown
   obs_property_t *hw_list =
       obs_properties_add_list(props, "hardware_type", "Hardware Encoder",
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -441,15 +440,15 @@ obs_properties_t *unified_encoder_properties(void *unused) {
   obs_property_list_add_int(hw_list, "NVIDIA NVENC", HARDWARE_TYPE_NVIDIA);
   obs_property_list_add_int(hw_list, "AMD AMF", HARDWARE_TYPE_AMD);
 
-  // Codec Format 已经通过注册不同的encoder固定，不再需要UI选择
+  // Codec format is fixed per registered encoder, so it needs no UI choice
 
-  // 编码参数
+  // Encoding parameters
   obs_properties_add_int(props, "bitrate", "Bitrate (kbps)", 500, 50000, 100);
   obs_properties_add_int(props, "keyint_sec", "Keyframe Interval (seconds)", 1,
                          10, 1);
   obs_properties_add_int(props, "bframes", "B-frames", 0, 4, 1);
 
-  // Profile选择
+  // Profile choice
   obs_property_t *profile_list =
       obs_properties_add_list(props, "profile", "Profile", OBS_COMBO_TYPE_LIST,
                               OBS_COMBO_FORMAT_STRING);
@@ -457,14 +456,14 @@ obs_properties_t *unified_encoder_properties(void *unused) {
   obs_property_list_add_string(profile_list, "Main", "main");
   obs_property_list_add_string(profile_list, "High", "high");
 
-  // Preset选择
+  // Preset choice
   obs_property_t *preset_list = obs_properties_add_list(
       props, "preset", "Preset", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
   obs_property_list_add_string(preset_list, "Fast", "fast");
   obs_property_list_add_string(preset_list, "Balanced", "balanced");
   obs_property_list_add_string(preset_list, "Quality", "quality");
 
-  // NTP同步设置
+  // NTP sync settings
   obs_properties_add_bool(props, "ntp_enabled", "Enable NTP Sync");
   obs_properties_add_text(props, "ntp_server", "NTP Server", OBS_TEXT_DEFAULT);
   obs_properties_add_int(props, "ntp_port", "NTP Port", 1, 65535, 1);
@@ -475,15 +474,15 @@ obs_properties_t *unified_encoder_properties(void *unused) {
 }
 
 /*===========================================================================
- * 获取编码器名称
+ * Encoder name
  *===========================================================================*/
 
 const char *unified_encoder_get_name(void *type_data) {
   UNUSED_PARAMETER(type_data);
 
-  // 注意：type_data在这里是NULL，因为这是在注册时调用的
-  // 我们需要从obs_encoder_info的id来区分，但get_name不提供这个信息
-  // 所以我们创建三个独立的get_name函数
+  // Note: type_data is NULL here because this is called at registration time
+  // Telling them apart needs the obs_encoder_info id, which get_name lacks
+  // hence three separate get_name functions
   return "SEI STAMPER";
 }
 
@@ -503,7 +502,7 @@ const char *unified_encoder_get_name_av1(void *type_data) {
 }
 
 /*===========================================================================
- * 获取视频信息
+ * Get the video info
  *===========================================================================*/
 
 void unified_encoder_get_video_info(void *data, struct video_scale_info *info) {
@@ -512,7 +511,7 @@ void unified_encoder_get_video_info(void *data, struct video_scale_info *info) {
     return;
   }
 
-  // 转发到底层编码器
+  // Forward to the backend encoder
   switch (enc->hardware_type) {
   case HARDWARE_TYPE_INTEL:
 #ifdef ENABLE_VPL
@@ -545,12 +544,12 @@ void unified_encoder_get_video_info(void *data, struct video_scale_info *info) {
     break;
   }
 
-  // 默认返回NV12格式
+  // Default to NV12
   info->format = VIDEO_FORMAT_NV12;
 }
 
 /*===========================================================================
- * 获取Extra Data
+ * Get extra data
  *===========================================================================*/
 
 bool unified_encoder_get_extra_data(void *data, uint8_t **extra_data,
@@ -560,7 +559,7 @@ bool unified_encoder_get_extra_data(void *data, uint8_t **extra_data,
     return false;
   }
 
-  // 转发到底层编码器
+  // Forward to the backend encoder
   switch (enc->hardware_type) {
   case HARDWARE_TYPE_INTEL:
 #ifdef ENABLE_VPL
@@ -597,10 +596,10 @@ bool unified_encoder_get_extra_data(void *data, uint8_t **extra_data,
 }
 
 /*===========================================================================
- * 编码器信息结构体 - 基础模板
+ * Encoder info struct - base template
  *===========================================================================*/
 
-// 这些将在plugin.c中被复制并修改为三个独立的encoder info
+// copied and adjusted in plugin.c into three independent encoder infos
 struct obs_encoder_info unified_encoder_info_h264 = {
     .id = "sei_stamper_h264",
     .type = OBS_ENCODER_VIDEO,

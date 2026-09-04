@@ -52,8 +52,8 @@ SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间
 
 ### 系统要求
 
-- OBS Studio 32.0.4 或更高版本
-- 最新验证构建环境：OBS Studio 32.1.2
+- OBS Studio 32.2 或更高版本（插件链接 FFmpeg 8 / libavcodec 62，更早的 OBS 版本不包含这些库）
+- 最新验证构建环境：OBS Studio 32.2.2 + `windows-deps-2026-08-26-x64`
 - Windows 10/11 (64位)
 
 ### 手动安装步骤
@@ -212,8 +212,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 - **CMake** 3.20 或更高版本
 - **Visual Studio 2022**（带 C++ 桌面开发工作负载）
-- **OBS Studio 源代码**（作为依赖项包含）
-- **FFmpeg 库**（由 OBS 提供）
+- **OBS Studio 32.2 源代码**（已构建 `libobs`，通过 `OBS_SOURCE_DIR` 指定）
+- **FFmpeg 8 库**（由 OBS 依赖包提供：`windows-deps-2026-05-21-x64` 或更新）
 - **libsrt**（包含在仓库中）
 
 ### 快速编译（推荐）
@@ -225,7 +225,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
    # 进入项目目录
    cd sei-stamper
    
-   # 运行自动编译脚本
+   # 指定已构建 libobs 的 OBS Studio 32.2 源码目录，然后运行自动编译脚本
+   $env:OBS_SOURCE_DIR = "C:\obs-studio"
    .\build_and_install.bat
    ```
 
@@ -250,8 +251,9 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
    ```powershell
    mkdir build
    cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
    ```
+   `OBS_BUILD_DIR` 默认为 `OBS_SOURCE_DIR\build`，`OBS_DEPS_DIR` 默认为 `OBS_SOURCE_DIR\.deps` 下最新的 `obs-deps-*` / `windows-deps-*` 依赖包（可用 `-D` 参数或同名环境变量覆盖）。依赖包必须是 FFmpeg 8（libavcodec 62，即 `windows-deps-2026-05-21-x64` 或更新），更旧的依赖包会在 configure 阶段被拒绝——链接到 libavcodec 61 的 DLL 无法在 OBS 32.2 中加载。
 
 3. **编译：**
    ```powershell
@@ -276,7 +278,7 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 **解决方案：**
 - 确认插件 DLL 在 `obs-plugins/64bit/` 目录
 - 检查 OBS 日志查看加载错误
-- 确保 OBS 版本为 32.0.4+
+- 确保 OBS 版本为 32.2+
 
 ### 问题：接收端无法连接 SRT
 
@@ -408,5 +410,5 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 
 ---
 
-**当前版本**：1.2.3-beta
-**最后更新**：2026-06-07
+**当前版本**：1.3.0
+**最后更新**：2026-09-04

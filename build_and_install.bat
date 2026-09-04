@@ -1,10 +1,34 @@
 @echo off
 REM SEI Stamper Plugin - Automated Build and Install Script
-REM This script automates the CMake build process and installs the plugin to the output directory
+REM Configures, builds and stages the plugin under out\obs-studio.
+REM
+REM Required environment:
+REM   OBS_SOURCE_DIR  - OBS Studio source tree with libobs built (e.g. C:\obs-studio)
+REM Optional environment:
+REM   OBS_BUILD_DIR   - OBS build output (default: %OBS_SOURCE_DIR%\build)
+REM   OBS_DEPS_DIR    - OBS deps bundle (default: newest under %OBS_SOURCE_DIR%\.deps;
+REM                     must be FFmpeg 8, i.e. windows-deps-2026-05-21 or newer)
+REM   CMAKE_GENERATOR - CMake generator (default: Visual Studio 17 2022)
+
+setlocal
 
 echo ================================================
 echo SEI Stamper Plugin - Build and Install
 echo ================================================
+echo.
+
+if not defined OBS_SOURCE_DIR (
+    echo ERROR: OBS_SOURCE_DIR is not set. Point it to the OBS Studio source tree, e.g.:
+    echo   set OBS_SOURCE_DIR=C:\obs-studio
+    pause
+    exit /b 1
+)
+if not defined OBS_BUILD_DIR set "OBS_BUILD_DIR=%OBS_SOURCE_DIR%\build"
+if not defined CMAKE_GENERATOR set "CMAKE_GENERATOR=Visual Studio 17 2022"
+
+echo OBS source:  %OBS_SOURCE_DIR%
+echo OBS build:   %OBS_BUILD_DIR%
+echo Generator:   %CMAKE_GENERATOR%
 echo.
 
 REM Check if build directory exists
@@ -24,7 +48,7 @@ echo.
 echo ================================================
 echo Step 1: Configuring CMake...
 echo ================================================
-cmake .. -G "Visual Studio 17 2022" -A x64
+cmake .. -G "%CMAKE_GENERATOR%" -A x64 -DOBS_SOURCE_DIR="%OBS_SOURCE_DIR%" -DOBS_BUILD_DIR="%OBS_BUILD_DIR%"
 if %ERRORLEVEL% neq 0 (
     echo ERROR: CMake configuration failed!
     cd ..
@@ -63,14 +87,14 @@ echo Step 4: Copying dependencies...
 echo ================================================
 
 set SRT_DLL_PATHS=^
-..\srt\_build\Release\srt.dll ^
-..\obs-studio-master\build\rundir\Release\bin\64bit\srt.dll
+"..\srt\_build\Release\srt.dll" ^
+"%OBS_BUILD_DIR%\rundir\Release\bin\64bit\srt.dll"
 
 for %%P in (%SRT_DLL_PATHS%) do (
-    if exist "%%P" (
-        echo Found SRT library: %%P
+    if exist "%%~P" (
+        echo Found SRT library: %%~P
         if not exist "..\out\obs-studio\obs-plugins\64bit" mkdir "..\out\obs-studio\obs-plugins\64bit"
-        copy /Y "%%P" "..\out\obs-studio\obs-plugins\64bit\" >nul
+        copy /Y "%%~P" "..\out\obs-studio\obs-plugins\64bit\" >nul
         echo SRT library copied successfully
         goto :srt_done
     )

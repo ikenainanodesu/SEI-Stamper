@@ -19,28 +19,28 @@
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("sei-stamper", "en-US")
 
-// 模块描述
+// Module description
 MODULE_EXPORT const char *obs_module_description(void) {
   return "SEI Stamper Plugin - Add NTP timestamp SEI to video streams for "
          "frame-level synchronization";
 }
 
-// 模块名称
+// Module name
 MODULE_EXPORT const char *obs_module_name(void) { return "SEI Stamper"; }
 
-// 前向声明 - 统一编码器（三个独立的codec版本）
+// Forward declarations - unified encoder (three independent codec variants)
 extern struct obs_encoder_info unified_encoder_info_h264;
 extern struct obs_encoder_info unified_encoder_info_h265;
 extern struct obs_encoder_info unified_encoder_info_av1;
 
-// 前向声明 - 源
+// Forward declarations - source
 extern struct obs_source_info sei_receiver_source_info;
 
-// 模块加载
+// Module load
 bool obs_module_load(void) {
   blog(LOG_INFO, "SEI Stamper Plugin loaded");
 
-  /* 注册三个独立的SEI Stamper编码器（每种codec一个） */
+  /* Register three independent SEI Stamper encoders, one per codec */
   blog(LOG_INFO, "Registering SEI Stamper H.264 encoder");
   obs_register_encoder(&unified_encoder_info_h264);
 
@@ -50,14 +50,14 @@ bool obs_module_load(void) {
   blog(LOG_INFO, "Registering SEI Stamper AV1 encoder");
   obs_register_encoder(&unified_encoder_info_av1);
 
-  /* 注册SEI接收器源 */
+  /* Register the SEI receiver source */
   blog(LOG_INFO, "Registering SEI Receiver source");
   obs_register_source(&sei_receiver_source_info);
 
   return true;
 }
 
-// 模块卸载
+// Module unload
 void obs_module_unload(void) {
   blog(LOG_INFO, "[SEI Stamper] Plugin unloaded");
 }

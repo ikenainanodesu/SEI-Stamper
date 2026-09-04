@@ -53,8 +53,8 @@ SEI Stamperは、SEI（補足拡張情報）を使用してビデオストリー
 
 ### 必要条件
 
-- OBS Studio 32.0.4以降
-- 最新の検証済みビルド環境：OBS Studio 32.1.2
+- OBS Studio 32.2以降（プラグインは FFmpeg 8 / libavcodec 62 にリンクしており、それより古い OBS には同梱されていません）
+- 最新の検証済みビルド環境：OBS Studio 32.2.2 + `windows-deps-2026-08-26-x64`
 - Windows 10/11 (64ビット)
 
 ### 手動インストール手順
@@ -213,8 +213,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 
 - **CMake** 3.20以降
 - **Visual Studio 2022**（C++デスクトップ開発ワークロード付き）
-- **OBS Studioソースコード**（依存関係として含まれる）
-- **FFmpegライブラリ**（OBSによって提供）
+- **OBS Studio 32.2 ソースコード**（`libobs` をビルド済み、`OBS_SOURCE_DIR` で指定）
+- **FFmpeg 8 ライブラリ**（OBS の依存関係バンドルが提供：`windows-deps-2026-05-21-x64` 以降）
 - **libsrt**（リポジトリに含まれる）
 
 ### クイックビルド（推奨）
@@ -226,7 +226,8 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
    # プロジェクトディレクトリに移動
    cd sei-stamper
    
-   # 自動ビルドスクリプトを実行
+   # libobs をビルド済みの OBS Studio 32.2 ソースディレクトリを指定し、自動ビルドスクリプトを実行
+   $env:OBS_SOURCE_DIR = "C:\obs-studio"
    .\build_and_install.bat
    ```
 
@@ -253,8 +254,9 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
    ```powershell
    mkdir build
    cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64
+   cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
    ```
+   `OBS_BUILD_DIR` は既定で `OBS_SOURCE_DIR\build`、`OBS_DEPS_DIR` は `OBS_SOURCE_DIR\.deps` 内の最新の `obs-deps-*` / `windows-deps-*` バンドルになります（`-D` オプションまたは同名の環境変数で上書き可能）。依存関係バンドルは FFmpeg 8（libavcodec 62、つまり `windows-deps-2026-05-21-x64` 以降）が必要で、それより古いバンドルは configure 時に拒否されます。libavcodec 61 にリンクした DLL は OBS 32.2 で読み込めないためです。
 
 3. **ビルド：**
    ```powershell
@@ -279,7 +281,7 @@ MediaInfo --Full output.mp4 | Select-String "SEI"
 **解決策：**
 - プラグインDLLが`obs-plugins/64bit/`ディレクトリにあることを確認
 - OBSログで読み込みエラーを確認
-- OBSバージョンが32.0.4以降であることを確認
+- OBSバージョンが32.2以降であることを確認
 
 ### 問題：受信機がSRTに接続できない
 
@@ -412,5 +414,5 @@ GPL-2.0 License - OBS Studioのライセンスに準拠
 
 ---
 
-**現在のバージョン**: 1.2.3-beta
-**最終更新**: 2026-06-07
+**現在のバージョン**: 1.3.0
+**最終更新**: 2026-09-04
