@@ -206,20 +206,24 @@ See the [LICENSE](LICENSE) file for details.
 
 ## Release Notes
 
-### v1.3.0 (2026-09-03)
+### v1.3.0 (2026-09-04)
 
 **🔧 NTP reliability (cross-platform):**
 - 🪟 **Fixed NTP on Windows**: `SO_RCVTIMEO` was set with a `struct timeval`, but Winsock expects a `DWORD` of milliseconds — it read `tv_sec` (5) as a **5 ms** timeout, so every sync failed with `WSAETIMEDOUT`. NTP never worked on Windows before this.
 - 🌐 **Try every resolved address**: `getaddrinfo` can return several addresses (often an IPv6 record first); the client now tries each until one answers instead of only the first.
 - 🛡️ **Response validation**: reject Kiss-o'-Death (stratum 0), unsynchronized (stratum ≥ 16) and non-server-mode replies instead of anchoring on a bogus time.
 - 🐛 **Receive error handling**: a failed `recvfrom` no longer slips past a signed/unsigned length check; failures log the socket error code so the cause is visible.
+- 🔒 **Request/reply pairing**: a reply must echo our originate timestamp (T1), so a stale, cross-talk or spoofed datagram can no longer re-anchor the clock.
+- 🎛️ **Sync interval setting fixed**: the unified encoder saves `ntp_sync_interval_ms` but the backends read `ntp_sync_interval`, so the UI knob was dead and the interval always fell back to the hard-coded 60 s.
 
 **🚀 Non-blocking sync:**
 - ⏱️ **Background NTP thread**: sync now runs on its own thread (opt-in `ntp_client_start_background_sync`), so the network round-trip never blocks the encode path; encoders just read the latest cached time. State is mutex-guarded for a consistent snapshot.
 - 🔧 **Configurable NTP port** via the `ntp_port` setting (defaults to 123).
 
 **🎞️ Encoding:**
-- 🔑 **Keyframe-keyed parameter-set re-injection (NVENC)**: SPS/PPS are re-injected on *every* keyframe, not only when an SEI is present — so a keyframe emitted before the first NTP sync is still decodable by a mid-stream MPEG-TS/SRT joiner.
+- 🔑 **Self-contained keyframes (NVENC & AMF)**: SPS/PPS(/VPS) are re-injected into any keyframe that doesn't already carry an SPS — independent of SEI presence, and a keyframe led by a lone AUD no longer counts as having params in-band — so a mid-stream MPEG-TS/SRT joiner can always decode from the next keyframe.
+- 🧯 **AMF on avcodec 62**: the AMF path set no global header, so newer FFmpeg failed with "Failed to retrieve headers"; header handling now mirrors NVENC (extradata → Annex-B + keyframe re-injection). Not yet verified on AMD hardware.
+- 🚧 **AVCC fallback gated to H.264**: HEVC HVCC extradata (which also starts with `configurationVersion 0x01`) is rejected instead of mis-parsed as AVCC parameter sets.
 - 🛠️ **AMF preset mapping**: the unified encoder's `fast` preset is mapped to AMF's `speed` (AMF's `quality` option rejects `fast`).
 
 **🧩 Compatibility:**
@@ -227,6 +231,7 @@ See the [LICENSE](LICENSE) file for details.
 
 **📝 Housekeeping:**
 - Source comments translated to English throughout.
+- 🧪 **Standalone unit tests** under `tests/` (`run_tests.bat`, plain `cl`/`gcc` — no OBS or GPU needed): NTP conversion, SEI payload layout, NAL scanning, extradata conversion. 55 checks.
 
 ### v1.2.3-beta (2026-06-07)
 
@@ -292,4 +297,4 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 **Current Version**: 1.3.0
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-09-04
