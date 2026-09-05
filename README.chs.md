@@ -1,320 +1,158 @@
 # SEI Stamper 插件
 
-<img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
+<img src="pic/sei_stamper_gau.png" alt="SEI Stamper" width="250"/>
 
-**OBS Studio 帧级别视频同步**
+通过 NTP 时间戳与自定义 SEI 辅助 OBS Studio 多路视频时间对齐。
 
-[English](README.md) | [中文](#中文) | [日本語](README.jpn.md)
+[English](README.md) | [中文](README.chs.md) | [日本語](README.jpn.md)
 
----
+## 当前项目状态
 
-## 中文
+源码版本为 **1.3.0**。本文依据当前代码和构建脚本整理；源码版本号不代表 Releases 中已存在对应安装包。（来源：[CMakeLists.txt](CMakeLists.txt)、[模块注册](src/sei-stamper-plugin.c)）
 
-### 概述
+| 功能 | 当前实现与限制 |
+| --- | --- |
+| H.264 / H.265 | 提供 Intel QuickSync、NVIDIA NVENC、AMD AMF 后端，在关键帧中插入 NTP SEI |
+| ~~AV1~~ | **目前同步不可用。** 仍注册编码器及接收端选项，但时间戳插入沿用 H.264/H.265 NAL 路径，尚未实现 AV1 专用元数据封装；不列为可用的时间戳同步方案 |
+| 接收端 | 通过 FFmpeg 打开 SRT 流并解码视频和可用音轨；默认自动检测编码格式，也可手动覆盖 |
+| NTP | 发送端后台同步并读取缓存时钟；接收端仍在初始化和接收处理路径中执行同步请求 |
+| 验证范围 | Windows x64 Release 编译通过；60 项独立测试通过；在官方 OBS 32.2.2 运行库下通过 DLL 依赖加载、API 版本及 SRT 协议查询；未实测 OBS 插件初始化、GPU 编码或多路 SRT |
 
-SEI Stamper 是一个 OBS Studio 插件，通过在视频流中嵌入 NTP 时间戳的 SEI（补充增强信息）来实现**帧级别的视频同步**。
+表中实现依据：[统一编码器](src/unified-encoder.c)、[QSV](src/qsv-encoder.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)、[接收端](src/sei-receiver-source.c)、[测试](tests/test_ntp_sei.c)。
 
-**主要特性：**
-- 🎯 **帧精确同步** - 使用 NTP 时间戳
-- 📡 **多种硬件编码器** - Intel QuickSync、NVIDIA NVENC、AMD AMF
-- 🛠️ **NVENC/AMF 视频帧传输修复** - 最新代码已恢复 NVIDIA NVENC 与 AMD AMF 在 H.264/H.265 下的视频帧输出
-- 🎞️ **多编码格式支持** - 支持 **H.264** 和 **H.265 (HEVC)**
-- 🚀 **GPU 加速** - 支持 SEI 的硬件加速编码
-- 🔄 **完整方案** - 包含发送端和接收端
-- 🌐 **SRT 流媒体** - 内置 SRT 接收器,低延迟传输
-- ⏱️ **微秒精度** - 基于 NTP 的专业级时间同步
+H.265 经 SLS 转发的稳定性仍沿用项目已有的“支持有限”状态，本轮未重新验证。AMF 的 FFmpeg 8 兼容性修复已在代码中，但缺少本轮 AMD 实机验证。同步误差、端到端延迟和 CPU 开销应在实际设备、网络及输出配置下测量，本文不作固定精度或性能保证。
 
-### 应用场景
-
-- 多机位直播同步
-- 远程演播室帧级同步
-- 广播级多路信号对齐
-- 演唱会/活动多角度录制
-
-### 演示视频
-
-📺 **[在 YouTube 上观看演示视频](https://youtu.be/JhizRlUpSlg)**
-
-演示使用OBS输出4路相同设置的SRT视频，局域网接收这4路SRT。原生的OBS媒体源无法做到同步，对比本插件，可以做到大概±2帧的同步。
-
----
+[项目演示视频](https://youtu.be/JhizRlUpSlg)保留作为历史演示入口，不作为当前版本的基准测试。
 
 ## 安装
 
-### 快速安装（推荐）
+当前构建配置面向 **Windows x64 / OBS Studio 32.2 系列 / FFmpeg 8**，CMake 会拒绝 libavcodec 主版本低于 62 的依赖包。安装时须匹配构建所用的 OBS/FFmpeg 运行库；不能仅凭 OBS 版本号更高就推定兼容。（来源：[CMakeLists.txt](CMakeLists.txt)）
 
-从 [Releases](https://github.com/ikenainanodesu/sei-stamper/releases) 页面下载最新版本。
+1. 退出 OBS，从 [Releases](https://github.com/ikenainanodesu/SEI-Stamper/releases) 选择匹配环境的包，或按下文自行构建。
+2. 将插件与本地化文件放入 OBS 安装目录；默认位置为 `C:\Program Files\obs-studio`，写入该目录通常需要管理员权限。
+3. 若包中附带匹配的 SRT 运行库，按包的目录结构一并复制。自带构建脚本仅在找到 `srt.dll` 时复制它，不能假设每个构建包都有此文件。
+4. 重启 OBS，检查日志是否出现 `SEI Stamper Plugin loaded`，以及编码器、SEI 接收器是否可选。
 
-发布包包含：
-- `sei-stamper.dll` - 主插件
-- `srt.dll` - 接收端功能所需的 SRT 库
-- 多语言支持的本地化文件
+安装目录结构：
 
-### 系统要求
+```text
+obs-studio/
+├── obs-plugins/64bit/
+│   ├── sei-stamper.dll
+│   └── srt.dll                 # 如构建/发布包提供且运行时需要
+└── data/obs-plugins/sei-stamper/locale/
+    ├── en-US.ini
+    └── zh-CN.ini
+```
 
-- OBS Studio 32.2 或更高版本（插件链接 FFmpeg 8 / libavcodec 62，更早的 OBS 版本不包含这些库）
-- 最新验证构建环境：OBS Studio 32.2.2 + `windows-deps-2026-08-26-x64`
-- Windows 10/11 (64位)
-
-### 手动安装步骤
-
-1. **从 [Releases](https://github.com/ikenainanodesu/sei-stamper/releases) 页面下载发布包**
-
-2. **复制到 OBS 插件目录：**
-   ```powershell
-   # 复制插件 DLL
-   Copy-Item sei-stamper.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   
-   # 复制 SRT 库
-   Copy-Item srt.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   ```
-
-3. **复制本地化文件：**
-   ```powershell
-   # 创建目录
-   New-Item -ItemType Directory -Force `
-        "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale"
-   
-   # 复制语言文件
-   Copy-Item data\locale\* `
-        "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale\" -Recurse
-   ```
-
-4. **重启 OBS Studio**
-
----
+仓库提供英文、简体中文界面资源；日文 README 不代表附带日文界面翻译。SRT 接收依赖实际使用的 FFmpeg 运行库支持 SRT，仅复制一个 DLL 不足以保证接收可用。（来源：[安装脚本](build_and_install.bat)、[本地化资源](data/locale)、[接收端连接实现](src/sei-receiver-source.c)）
 
 ## 使用方法
 
-### 发送端（编码器）
+### 发送端
 
-1. 打开 **设置 → 输出 → 输出模式：高级**
-2. 根据需要的编码格式选择 SEI Stamper 编码器：
-   - **SEI Stamper (H.264)** - 兼容性最好
-   - **SEI Stamper (H.265)** - 高压缩率 (HEVC)，相比 H.264 节省 30-50% 带宽。*(注意：支持点对点传输对齐；SLS服务器传输支持有限且表现不稳定，正在努力寻找改善方案中)*
-3. 在编码器设置中选择您的 **硬件编码器 (Hardware Encoder)**：
-   - Intel QuickSync
-   - NVIDIA NVENC
-   - AMD AMF
+1. 在 OBS 打开“设置 → 输出”，切换到“高级”输出模式。
+2. 选择 `SEI STAMPER (H.264)` 或 `SEI STAMPER (H.265)`。
+3. 在 `Hardware Encoder` 中选择设备支持的 Intel QuickSync、NVIDIA NVENC 或 AMD AMF。默认选中 Intel，并不会自动选择本机可用的 GPU。
+4. 设置码率、关键帧间隔、NTP 服务器、端口和同步间隔。用于时间对齐的各发送端与接收端应配置一致的 NTP 时间源。
+5. 在 OBS 的输出设置中配置推流地址或录制目标，然后启动输出。编码器本身不创建 SRT 监听服务。
 
-> **NVENC/AMF 状态**：最新代码已包含 PR #6 的修复，解决了 NVIDIA NVENC 与 AMD AMF 在 H.264/H.265 下可能无法向推流输出传输视频帧的问题。如果您从旧发布包升级后仍遇到只有音频或没有视频帧的情况，请重新构建或安装包含该修复的版本。
+默认码率为 **2500 kbps**，关键帧间隔为 **2 秒**，B 帧为 **0**；发送端 NTP 默认服务器为 `pool.ntp.org`，端口 **123**，同步间隔 **60000 ms**。（来源：[统一编码器默认值及属性](src/unified-encoder.c)）
 
-4. 配置编码器属性：
-   - **NTP 服务器**：`time.windows.com`（或您的 NTP 服务器）
-   - **NTP 端口**：`123`（默认）
-   - **启用 NTP 同步**：✓
-5. 开始推流/录制
+当前三个硬件后端均直接启用 NTP，没有读取统一界面的 `ntp_enabled` 开关；不要依赖取消“Enable NTP Sync”来禁用发送端 NTP。首次同步成功前不会插入有效的 NTP SEI；成功后只在关键帧上读取时钟并插入时间戳。（来源：[QSV](src/qsv-encoder.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)）
 
-> **⚠️ 关于 H.265 的注意**: H.265 支持点对点传输（caller-listener）的对齐。但目前通过 SLS 服务器传输时支持有限，测试中表现不稳定，目前正在努力寻找改善方案中。
+### 接收端
 
-### 接收端（源）
+1. 在场景中添加“SEI 接收器 / SEI Receiver”。
+2. 填写与发送端或转发服务器对应的 SRT URL，确保两端的连接模式、地址和端口相匹配。代码默认值为 `srt://127.0.0.1:9000`，跨机器接收时需要改为实际地址。
+3. “编码格式”默认保留“自动检测”。只有需要覆盖探测结果时才手动选择 H.264 或 H.265，手动选择须与发送端一致。
+4. 启用 NTP 同步，并将服务器改为与发送端一致。接收端默认 `time.windows.com`，与发送端默认值不同。
+5. 硬件解码默认关闭；可选 QSV、NVDEC、AMF，实际可用性取决于设备、驱动和 FFmpeg 构建。
 
-1. 在 OBS 场景中，点击 **添加源 +**
-2. 选择 **SEI Receiver（SEI 接收器）**
-3. 配置源：
-   - **SRT URL**：`srt://发送端IP:端口`（例如：`srt://192.168.1.100:9000`）
-   - **启用 NTP 同步**：✓
-   - **NTP 服务器**：与发送端相同
-4. 点击 **确定**
+SRT URL 按原样传递给 FFmpeg，包括 URL 中的查询参数。接收端会尝试解码流中可用的音轨。（来源：[接收端默认值、属性及连接逻辑](src/sei-receiver-source.c)）
 
-**注意**：接收端目前**需要手动匹配**发送端的编码格式（H.264/H.265）。请确保接收源设置中的“编码格式”与发送端使用的编码器一致。
+### NTP 参数与同步行为
 
----
+| 参数 | 发送端 | 接收端 |
+| --- | --- | --- |
+| 默认服务器 | `pool.ntp.org` | `time.windows.com` |
+| 端口默认值 / 界面范围 | 123 / 1–65535 | 123 / 1–65535 |
+| 同步间隔默认值 | 60000 ms | 10000 ms |
+| 同步间隔界面范围 | 1000–300000 ms | 100–3600000 ms |
+| 漂移阈值默认值 / 界面范围 | 无此选项 | 50 ms / 10–1000 ms |
 
-## 验证
+发送端后台线程启动后立即尝试同步，此后在每次请求结束后等待配置间隔。接收端收到携带 NTP 数据的帧时，关键帧或时间差超过阈值可触发请求，两种触发都受配置的最小间隔约束，10 秒是默认值而非固定下限。接收端请求仍可能阻塞接收处理；单个地址的接收超时为 5 秒，多地址尝试可能耗时更长。（来源：[NTP 客户端](src/ntp-client.c)、[编码器属性](src/unified-encoder.c)、[接收端](src/sei-receiver-source.c)）
 
-### 使用 FFprobe 检查 SEI 数据
+## 从源码构建
+
+需要 CMake 3.20+、带 C++ 桌面开发工作负载的 Visual Studio 2022，以及已经完成 Release 构建的 OBS 源码树和匹配的依赖包。仓库**不附带** OBS 或 SRT 源码/二进制依赖；`obs/`、`obs-studio-master/` 和 `srt/` 均列在忽略规则中。（来源：[CMakeLists.txt](CMakeLists.txt)、[.gitignore](.gitignore)）
+
+| 配置项 | 含义 / 默认值 |
+| --- | --- |
+| `OBS_SOURCE_DIR` | 必填，OBS 源码根目录 |
+| `OBS_BUILD_DIR` | 默认为 `OBS_SOURCE_DIR/build` |
+| `OBS_DEPS_DIR` | 默认在 `OBS_SOURCE_DIR/.deps` 中匹配 `obs-deps-20??-??-??-x64` / `windows-deps-20??-??-??-x64`，按名称排序后选择末项；多个包并存时建议显式指定 |
+| `CMAKE_GENERATOR` | 仅批处理脚本读取，默认 `Visual Studio 17 2022` |
+
+前三个变量均支持 CMake `-D` 参数或同名环境变量。当前构建脚本使用 `libobs/Release/obs.lib` 等固定 Release 子目录；指定 `OBS_BUILD_DIR` 时需匹配该布局。依赖包检查以实际 `LIBAVCODEC_VERSION_MAJOR >= 62` 为准，名称或日期本身不是兼容性证明。（来源：[CMakeLists.txt](CMakeLists.txt)）
+
+从项目根目录执行，路径替换为本机实际值：
 
 ```powershell
-# 查看帧信息
-ffprobe -select_streams v:0 -show_frames output.mp4 2>&1 | Select-String "SEI"
-
-# 详细帧数据
-ffprobe -select_streams v:0 -show_frames -show_entries frame=pict_type output.mp4
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DOBS_SOURCE_DIR="C:/obs-studio" `
+  -DOBS_BUILD_DIR="C:/obs-studio/build" `
+  -DOBS_DEPS_DIR="C:/obs-studio/.deps/windows-deps-2026-08-26-x64"
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/obs-studio
 ```
 
-### 使用 MediaInfo 检查
+插件输出为 `build/plugin/Release/sei-stamper.dll`，可安装目录为 `out/obs-studio/`。`cmake --install` 只安装插件和 `data/`，不会自动收集 SRT 或其他运行库。
+
+也可从项目根目录运行：
 
 ```powershell
-MediaInfo --Full output.mp4 | Select-String "SEI"
+$env:OBS_SOURCE_DIR = "C:\obs-studio"
+$env:OBS_DEPS_DIR = "C:\obs-studio\.deps\windows-deps-2026-08-26-x64"
+.\build_and_install.bat
 ```
 
----
+该脚本会**删除并重建项目根目录的 `build/`**，完成构建后暂存到 `out/obs-studio/`，不会直接安装到系统 OBS 目录。它会尝试从本地 SRT 构建或 OBS 运行目录复制 `srt.dll`。（来源：[build_and_install.bat](build_and_install.bat)）
 
-## 技术细节
+## 验证与排障
 
-### 架构图
+从项目根目录运行独立测试：
 
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   发送端    │         │  SRT 流      │         │   接收端    │
-│  (编码器)   │───────▶│  + SEI数据   │───────▶│   (源)      │
-└─────────────┘         └──────────────┘         └─────────────┘
-      │                                                  │
-      ▼                                                  ▼
-┌─────────────┐                                  ┌─────────────┐
-│  NTP客户端  │◀────────────────────────────────▶│  NTP客户端  │
-└─────────────┘         NTP服务器                └─────────────┘
+```powershell
+.\tests\run_tests.bat
 ```
 
-### SEI 格式
+2026-09-05 本地执行结果为 **60 项通过、0 项失败**。测试覆盖 NTP 时间转换和同步锚点、SEI 负载布局、NAL 扫描及 extradata 转换。测试文件内复制了被测纯函数，并未直接链接生产源码；它不覆盖 NTP 网络请求、线程、OBS 加载、GPU 编解码或多流同步。（来源：[测试脚本](tests/run_tests.bat)、[测试实现](tests/test_ntp_sei.c)）
 
-- **UUID**：自定义标识符（`a5b3c2d1-e4f5-6789-abcd-ef0123456789`）
-- **负载类型**：User Data Unregistered（类型 5）
-- **数据结构**：
-  - UUID（16 字节）
-  - PTS（8 字节）
-  - NTP 时间戳（8 字节：4 字节秒 + 4 字节小数）
+同日使用 MSVC 19.50 / CMake 4.2.1 / Ninja 完成 1.3.0 Windows x64 Release 构建，并在官方 OBS 32.2.2 便携运行库下验证 DLL 加载、`obs_module_ver()` 和 SRT 协议查询。此发布包使用官方 32.2.2 头文件，并从同版本 DLL 导出表生成 OBS/pthread 导入库。未启动 OBS 插件初始化或执行 GPU/推流测试。（来源：[v1.3.0 发布附件内的构建记录](https://github.com/ikenainanodesu/SEI-Stamper/releases/tag/v1.3.0)）
 
-### NTP 同步策略
+实际部署时检查 OBS 日志：
 
-#### 编码器（发送端）
-- **同步间隔**: 每 60 秒
-- **触发条件**: 编码过程中自动定期同步
-- **目的**: 确保编码器的 NTP 时间保持准确
+- **插件不显示**：检查 DLL/本地化目录、OBS 与 FFmpeg 运行库是否匹配。
+- **编码器创建失败**：核对所选硬件、编码格式与驱动，查看 QSV/NVENC/AMF 初始化错误。
+- **SRT 连接失败**：核对 URL、两端连接模式、监听端状态、防火墙及 FFmpeg 的 SRT 支持。
+- **无 NTP SEI**：查找 `NTP sync successful`；首次同步完成后等待下一个关键帧。请求失败时检查 DNS、UDP 端口和日志中的 socket 错误。
+- **接收卡顿或同步不稳**：核对双方时间源、接收端同步间隔及网络请求耗时；用同画面帧计数或时间码实测多流误差。
 
-#### 接收器（源）
-- **智能同步**: 使用两个触发条件的自适应同步
-  1. **关键帧触发**: 带 SEI 的关键帧（IDR）时同步（**最小10秒间隔**）
-  2. **漂移检测**: 当时间漂移超过配置阈值时（默认50ms）
-- **目的**: 在最小化网络开销的同时保持高精度
-- **性能**: 最小同步间隔防止过多 NTP 请求
+可用 `ffprobe -select_streams v:0 -show_frames output.mp4` 辅助检查帧信息，但出现一般 SEI 标记并不能证明本插件 UUID/时间戳正确，也不能证明多流已同步。自定义负载须按下述结构核对。（来源：[SEI 构造与解析](src/sei-handler.c)）
 
-### NTP 配置推荐
+## SEI 数据格式
 
-#### 编码器设置
+自定义负载为 **32 字节**，数值字段按大端序写入；NAL 头、负载类型/长度、转义字节及结束位不计入该长度。
 
-| 参数 | 范围 | 默认值 | 推荐值 |
-|------|------|--------|--------|
-| NTP 同步间隔 | 1-600秒 | 60秒 | **30-120秒** |
+| 字段 | 长度 |
+| --- | --- |
+| UUID `a5b3c2d1-e4f5-6789-abcd-ef0123456789` | 16 字节 |
+| 帧 PTS（int64） | 8 字节 |
+| NTP 秒（uint32） | 4 字节 |
+| NTP 小数（uint32） | 4 字节 |
 
-#### 接收器设置
-
-| 参数 | 范围 | 默认值 | 推荐值 |
-|------|------|--------|--------|
-| NTP 漂移阈值 | 10-1000ms | 50ms | **30-100ms** |
-| NTP 同步间隔 | 100ms-1h | 10s | **10-60秒** |
-
-> **ℹ️ 注意**: 同步间隔现在完全可配置。将应用您设置的值（默认10秒）作为最小间隔以防止性能问题。如果您的网络和 CPU 能够处理频繁的 NTP 请求，您可以降低此值。
-
-### 支持的编码器
-
-| 编码器名称 | 编码格式 | 支持硬件 | 状态 |
-|----------|---------|---------|------|
-| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ 已验证；NVENC/AMF 视频帧传输已修复 |
-| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ✅ 点对点已验证；NVENC/AMF 视频帧传输已修复；⚠️ 对 SLS 支持有限 |
-
----
-
-## 从源码编译
-
-### 编译要求
-
-- **CMake** 3.20 或更高版本
-- **Visual Studio 2022**（带 C++ 桌面开发工作负载）
-- **OBS Studio 32.2 源代码**（已构建 `libobs`，通过 `OBS_SOURCE_DIR` 指定）
-- **FFmpeg 8 库**（由 OBS 依赖包提供：`windows-deps-2026-05-21-x64` 或更新）
-- **libsrt**（包含在仓库中）
-
-### 快速编译（推荐）
-
-为了方便无编译基础的用户，使用自动编译脚本：
-
-1. **运行编译脚本：**
-   ```powershell
-   # 进入项目目录
-   cd sei-stamper
-   
-   # 指定已构建 libobs 的 OBS Studio 32.2 源码目录，然后运行自动编译脚本
-   $env:OBS_SOURCE_DIR = "C:\obs-studio"
-   .\build_and_install.bat
-   ```
-
-2. **获取插件：**
-   - 编译成功后，插件文件会生成在 `out/obs-studio/` 目录下
-   - 插件结构镜像 OBS 安装目录
-
-3. **安装：**
-   - 将 `out/obs-studio/` 的内容复制到您的 OBS 安装目录
-   - 默认位置：`C:\Program Files\obs-studio`
-   - **需要管理员权限**
-
-### 手动编译步骤
-
-1. **克隆仓库：**
-   ```bash
-   git clone https://github.com/ikenainanodesu/sei-stamper.git
-   cd sei-stamper
-   ```
-
-2. **配置 CMake：**
-   ```powershell
-   mkdir build
-   cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
-   ```
-   `OBS_BUILD_DIR` 默认为 `OBS_SOURCE_DIR\build`，`OBS_DEPS_DIR` 默认为 `OBS_SOURCE_DIR\.deps` 下最新的 `obs-deps-*` / `windows-deps-*` 依赖包（可用 `-D` 参数或同名环境变量覆盖）。依赖包必须是 FFmpeg 8（libavcodec 62，即 `windows-deps-2026-05-21-x64` 或更新），更旧的依赖包会在 configure 阶段被拒绝——链接到 libavcodec 61 的 DLL 无法在 OBS 32.2 中加载。
-
-3. **编译：**
-   ```powershell
-   cmake --build . --config Release
-   ```
-
-4. **安装（可选）：**
-   ```powershell
-   cmake --install . --config Release
-   ```
-
-5. **输出文件：**
-   - 插件：`build/plugin/Release/sei-stamper.dll`
-   - 或使用 `out/obs-studio/` 目录结构方便安装
-
----
-
-## 故障排除
-
-### 问题：OBS 中找不到编码器
-
-**解决方案：**
-- 确认插件 DLL 在 `obs-plugins/64bit/` 目录
-- 检查 OBS 日志查看加载错误
-- 确保 OBS 版本为 32.2+
-
-### 问题：接收端无法连接 SRT
-
-**解决方案：**
-- 确认已安装 `srt.dll`
-- 检查防火墙设置
-- 确认 SRT URL 格式：`srt://ip:端口`
-
-### 问题：找不到 SEI 数据
-
-**解决方案：**
-- 确保 NTP 服务器可访问
-- 确认已勾选"启用 NTP 同步"
-- 检查 OBS 日志查看 NTP 同步状态
-
----
-
-## 性能指标
-
-- **CPU 开销**：< 1%（SEI 插入）
-- **NTP 同步频率**：每 60 秒
-- **帧精度**：60fps 时 ±1 帧
-- **延迟**：~100ms（SRT 120ms 延迟设置）
-
----
-
-## 贡献
-
-欢迎贡献！请随时提交 Pull Request。
-
-### 开发指南
-
-1. 遵循现有的代码风格
-2. 为复杂逻辑添加注释
-3. 彻底测试您的更改
-4. 根据需要更新文档
+使用 User Data Unregistered（负载类型 5）；H.264 使用 NAL 类型 6，H.265 使用 Prefix SEI 类型 39。该封装不适用于 AV1。（来源：[sei-handler.h](src/sei-handler.h)、[sei-handler.c](src/sei-handler.c)、[硬件插入路径](src/nvenc-encoder.c)）
 
 ---
 
@@ -345,6 +183,21 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 
 ## 版本更新记录
 
+### v1.3.0 (2026-09-04)
+
+- 将 Windows NTP 接收超时修正为 5000 ms，依次尝试解析出的地址，并记录接收错误。
+- 校验服务器模式、闰秒指示、stratum 及请求时间戳回显。请求与响应配对不等于加密认证。
+- 使用偏移修正后的接收时间（T4 + offset）作为时钟锚点，日志记录时钟偏移与往返延迟。
+- 发送端 NTP 请求移至后台线程，统一读取 `ntp_sync_interval_ms` 并支持配置端口，只在关键帧读取与插入时间戳。
+- NVENC/AMF 在关键帧缺少 SPS 时重新插入可用的 SPS/PPS(/VPS)；H.264 AVCC 回退转换拒绝 HEVC HVCC，不能据此保证所有 HEVC 流的头信息都可恢复。
+- 调整 AMF 全局头处理，并将 `fast` 预设映射到 `speed`；AMD 实机验证仍待完成。
+- 接收端改用 FFmpeg 8 的 `AV_FRAME_FLAG_KEY`；构建支持配置 OBS SDK 路径，并检查 libavcodec 主版本不低于 62。
+- 新增独立纯函数测试，当前执行结果和覆盖限制见上文。
+
+来源：[NTP 客户端](src/ntp-client.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)、[QSV](src/qsv-encoder.c)、[接收端](src/sei-receiver-source.c)、[CMake](CMakeLists.txt)、[测试](tests/test_ntp_sei.c)。
+
+以下保留历史发布记录，其中的兼容性及验证描述不代表当前版本状态。
+
 ### v1.2.3-beta (2026-06-07)
 
 **🔧 修复与验证:**
@@ -372,19 +225,20 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 ### v1.2.0 (2026-01-22)
 
 **🎉 新功能:**
-- ✨ **多编码格式支持**: 全面支持 **H.265 (HEVC)** 和 **AV1** 编码格式
+- ✨ **多编码格式支持**: 全面支持 **H.265 (HEVC)** 和 ~~**AV1**~~ 编码格式（AV1 目前同步不可用）
   - **H.265**: 相比 H.264 节省 30-50% 带宽
-  - **AV1**: 下一代高效压缩
+  - ~~**AV1**: 下一代高效压缩~~
 - 🛠️ **三个独立编码器**:
   - `SEI STAMPER (H.264)`
   - `SEI STAMPER (H.265)`
-  - `SEI STAMPER (AV1)`
+  - ~~`SEI STAMPER (AV1)`~~（目前同步不可用）
   - 均支持硬件加速 (Intel/NVIDIA/AMD)
 - 🧠 **接收器配置**: 接收端需要手动选择匹配的编码格式以确保正确解码。
 
 **⚠️ 重要限制**:
+
 - **H.264** 和 **H.265** 已完全验证支持 SRT 流媒体。
-- **AV1** 编码功能可用，但 OBS Studio 的 SRT 输出可能不支持 AV1（取决于 OBS 版本）。
+- ~~**AV1** 编码功能可用，但 OBS Studio 的 SRT 输出可能不支持 AV1（取决于 OBS 版本）。~~ **当前状态：AV1 同步不可用。**
 
 ### v1.1.3 (2026-01-04)
 
@@ -411,4 +265,4 @@ GPL-2.0 License - 遵循 OBS Studio 许可
 ---
 
 **当前版本**：1.3.0
-**最后更新**：2026-09-04
+**最后更新**：2026-09-05

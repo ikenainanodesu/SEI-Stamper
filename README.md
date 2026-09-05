@@ -1,205 +1,156 @@
 # SEI Stamper Plugin
 
-<img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
+<img src="pic/sei_stamper_gau.png" alt="SEI Stamper" width="250"/>
 
+NTP timestamps and custom SEI metadata for aligning multiple video streams in OBS Studio.
 
-**Frame-Level Video Synchronization for OBS Studio**
+[English](README.md) | [中文](README.chs.md) | [日本語](README.jpn.md)
 
-[English](#english) | [中文](README.chs.md) | [日本語](README.jpn.md)
+## Current project status
 
----
+The source version is **1.3.0**. This document describes the checked-in implementation; a source version does not establish that a matching release package has been published. (Sources: [CMakeLists.txt](CMakeLists.txt), [module registration](src/sei-stamper-plugin.c).)
 
-## English
+| Feature | Implementation and limits |
+| --- | --- |
+| H.264 / H.265 | Intel QuickSync, NVIDIA NVENC and AMD AMF backends insert NTP SEI on keyframes |
+| ~~AV1~~ | **Synchronization is currently unavailable.** Encoder and receiver options remain registered, but timestamp insertion still uses the H.264/H.265 NAL path; no AV1-specific metadata packaging is implemented, so AV1 is not a supported timestamp synchronization path |
+| Receiver | Opens SRT through FFmpeg, decodes video and an available audio track, and defaults to automatic codec detection with a manual override |
+| NTP | Sender sync runs in the background; the receiver still makes synchronous requests during initialization and receive processing |
+| Validation | Windows x64 Release build and 60 standalone checks passed; DLL dependency loading, API version and SRT protocol lookup passed against official OBS 32.2.2 runtimes; OBS plugin initialization, GPU encoding and multi-stream SRT were not tested |
 
-### Overview
+Implementation sources: [unified encoder](src/unified-encoder.c), [QSV](src/qsv-encoder.c), [NVENC](src/nvenc-encoder.c), [AMF](src/amd-encoder.c), [receiver](src/sei-receiver-source.c), [tests](tests/test_ntp_sei.c).
 
-SEI Stamper is an OBS Studio plugin that enables **frame-level video synchronization** across multiple streams by embedding NTP timestamps into video streams using SEI (Supplemental Enhancement Information).
+H.265 through SLS retains the project's existing limited-support status and was not retested here. AMF includes FFmpeg 8 compatibility changes, but AMD hardware was not tested in this update. Measure synchronization error, end-to-end latency and CPU overhead on the actual setup; no fixed accuracy or performance guarantee is made.
 
-**Key Features:**
-- 🎯 **Frame-accurate synchronization** using NTP timestamps
-- 📡 **Multiple hardware encoders**: Intel QuickSync, NVIDIA NVENC, AMD AMF
-- 🛠️ **NVENC/AMF frame transport fix**: H.264/H.265 video frame output is restored for NVIDIA NVENC and AMD AMF in the latest code
-- 🎞️ **Multi-Codec Support**: **H.264** and **H.265 (HEVC)**
-- 🚀 **GPU acceleration**: Hardware-accelerated encoding with SEI support
-- 🔄 **Sender & Receiver**: Complete solution for encoding and decoding
-- 🌐 **SRT streaming**: Built-in SRT receiver for low-latency streaming
-- ⏱️ **Microsecond precision**: NTP-based timing for professional applications
-
-### Use Cases
-
-- Multi-camera live production synchronization
-- Remote studio frame-level sync
-- Broadcast-quality multi-source alignment
-- Live concert/event multi-angle recording
-
-### Demo Video
-
-📺 **[Watch Demo Video on YouTube](https://youtu.be/JhizRlUpSlg)** 
-
-This demonstration shows OBS sending 4 SRT streams with identical settings over a local network. with this plugin, all 4 streams are synchronized to within ±2 frame accuracy.
-
----
+The [project demo video](https://youtu.be/JhizRlUpSlg) remains a historical demonstration, not a benchmark of the current source.
 
 ## Installation
 
-### Quick Install (Recommended)
+The build configuration targets **Windows x64 / OBS Studio 32.2 series / FFmpeg 8** and rejects dependency bundles with libavcodec major versions below 62. Match the OBS and FFmpeg runtime libraries to those used for the plugin build; a higher OBS version alone does not establish compatibility. (Source: [CMakeLists.txt](CMakeLists.txt).)
 
-Download the latest release from [Releases](https://github.com/ikenainanodesu/sei-stamper/releases) page.
+1. Close OBS and choose an environment-compatible package from [Releases](https://github.com/ikenainanodesu/SEI-Stamper/releases), or build from source.
+2. Copy the plugin and locale files into the OBS installation, normally `C:\Program Files\obs-studio`. Writing there normally requires administrator privileges.
+3. If the package includes a matching SRT runtime, copy it according to the package layout. The build script copies `srt.dll` only if it finds one; its presence is not guaranteed.
+4. Restart OBS and check for `SEI Stamper Plugin loaded` in the log and the encoder/receiver entries in the UI.
 
-The release package includes:
-- `sei-stamper.dll` - Main plugin
-- `srt.dll` - SRT library for receiver functionality
-- Locale files for multi-language support
+```text
+obs-studio/
+├── obs-plugins/64bit/
+│   ├── sei-stamper.dll
+│   └── srt.dll                 # When supplied and required by the runtime
+└── data/obs-plugins/sei-stamper/locale/
+    ├── en-US.ini
+    └── zh-CN.ini
+```
 
-### Prerequisites
-
-- OBS Studio 32.2 or later (the plugin links against FFmpeg 8 / libavcodec 62, which older releases don't ship)
-- Latest validated build environment: OBS Studio 32.2.2 with `windows-deps-2026-08-26-x64`
-- Windows 10/11 (64-bit)
-
-### Manual Install Steps
-
-1. **Download the release package** from the [Releases](https://github.com/ikenainanodesu/sei-stamper/releases) page
-
-2. **Copy to OBS plugins directory:**
-   ```powershell
-   # Copy plugin DLL
-   Copy-Item sei-stamper.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   
-   # Copy SRT library
-   Copy-Item srt.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   ```
-
-3. **Copy locale files:**
-   ```powershell
-   # Create directory
-   New-Item -ItemType Directory -Force `
-       "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale"
-   
-   # Copy locale files
-   Copy-Item data\locale\* `
-       "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale\" -Recurse
-   ```
-
-4. **Restart OBS Studio**
-
----
+The repository supplies English and Simplified Chinese UI resources, not Japanese UI localization. SRT reception depends on SRT support in the FFmpeg runtime; copying one DLL does not by itself establish support. (Sources: [staging script](build_and_install.bat), [locale files](data/locale), [receiver](src/sei-receiver-source.c).)
 
 ## Usage
 
-### Sender (Encoder)
+### Sender
 
-1. Open **Settings → Output → Output Mode: Advanced**
-2. Select a SEI Stamper encoder based on your desired codec:
-   - **SEI Stamper (H.264)** - Best compatibility
-   - **SEI Stamper (H.265)** - High efficiency (HEVC), 30-50% bandwidth savings. (Note: Supports P2P caller-listener sync. SLS server support is limited, currently unstable, seeking optimization solutions)
-3. In the encoder settings, select your **Hardware Encoder**:
-   - Intel QuickSync
-   - NVIDIA NVENC
-   - AMD AMF
+1. Open **Settings → Output → Output Mode: Advanced**.
+2. Select `SEI STAMPER (H.264)` or `SEI STAMPER (H.265)`.
+3. Select a supported GPU under **Hardware Encoder**: Intel QuickSync, NVIDIA NVENC or AMD AMF. Intel is the default; selection is not automatic hardware detection.
+4. Set bitrate, keyframe interval, NTP server, port and sync interval. Configure matching NTP time sources on all senders and receivers used for alignment.
+5. Configure the streaming URL or recording destination in OBS output settings and start output. The encoder itself does not create an SRT listener.
 
-> **NVENC/AMF status**: The latest code includes the PR #6 fixes for NVIDIA NVENC and AMD AMF H.264/H.265 video frame transmission. If you are upgrading from an older package and see audio-only output or missing video frames, rebuild or install a release that includes this fix.
+Defaults are **2500 kbps**, a **2-second** keyframe interval and **0 B-frames**. Sender NTP defaults to `pool.ntp.org`, port **123**, interval **60000 ms**. (Source: [unified encoder defaults and properties](src/unified-encoder.c).)
 
-4. Configure encoder properties:
-   - **NTP Server**: `time.windows.com` (or your preferred NTP server)
-   - **Enable NTP Sync**: ✓
-5. Start streaming/recording
+All three hardware backends currently enable NTP directly and do not read the unified UI's `ntp_enabled` toggle. Do not rely on clearing “Enable NTP Sync” to disable sender NTP. No valid NTP SEI is inserted before the first successful sync; afterward the clock is read and timestamps are inserted only on keyframes. (Sources: [QSV](src/qsv-encoder.c), [NVENC](src/nvenc-encoder.c), [AMF](src/amd-encoder.c).)
 
-> **⚠️ Note on H.265**: H.265 supports Point-to-Point (Caller-Listener) synchronization. Support for SLS servers is currently limited and may exhibit unstable performance. We are actively looking for solutions to improve it.
+### Receiver
 
-### Receiver (Source)
+1. Add **SEI Receiver** to the scene.
+2. Enter the SRT URL for the sender or relay, matching connection modes, addresses and ports on both ends. The default `srt://127.0.0.1:9000` must be changed for another machine.
+3. Leave **Codec Format** on **Auto** unless overriding detection is necessary; a manual H.264/H.265 choice must match the sender.
+4. Enable NTP and use the sender's time source. The receiver defaults to `time.windows.com`, which differs from the sender default.
+5. Software decoding is the default. QSV, NVDEC and AMF choices depend on the device, driver and FFmpeg build.
 
-1. In your OBS scene, click **Add Source +**
-2. Select **SEI Receiver**
-3. Configure the source:
-   - **SRT URL**: `srt://sender-ip:port` (e.g., `srt://192.168.1.100:9000`)
-   - **Enable NTP Synchronization**: ✓
-   - **NTP Server**: Same as sender
-4. Click **OK**
+The URL, including query parameters, is passed to FFmpeg as entered. The receiver also attempts to decode an available audio track. (Source: [receiver defaults, properties and connection code](src/sei-receiver-source.c).)
 
-**Note**: The receiver **requires a manual match** of the sender's codec format (H.264/H.265). Please ensure the "Codec Format" in the receiver settings matches the encoder used by the sender.
+### NTP settings and behavior
 
----
+| Setting | Sender | Receiver |
+| --- | --- | --- |
+| Default server | `pool.ntp.org` | `time.windows.com` |
+| Default port / UI range | 123 / 1–65535 | 123 / 1–65535 |
+| Default sync interval | 60000 ms | 10000 ms |
+| Sync interval UI range | 1000–300000 ms | 100–3600000 ms |
+| Default drift threshold / UI range | Not exposed | 50 ms / 10–1000 ms |
 
-## Verification
-
-### Check SEI Data with FFprobe
-
-```powershell
-# View frame information
-ffprobe -select_streams v:0 -show_frames output.mp4 2>&1 | Select-String "SEI"
-
-# Detailed frame data
-ffprobe -select_streams v:0 -show_frames -show_entries frame=pict_type output.mp4
-```
-
-### Check with MediaInfo
-
-```powershell
-MediaInfo --Full output.mp4 | Select-String "SEI"
-```
-
----
-
-## Technical Details
-
-### Architecture
-
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Sender    │         │  SRT Stream  │         │  Receiver   │
-│  (Encoder)  │────────▶│   + SEI      │────────▶│  (Source)   │
-└─────────────┘         └──────────────┘         └─────────────┘
-      │                                                  │
-      ▼                                                  ▼
-┌─────────────┐                                  ┌─────────────┐
-│ NTP Client  │◀─────────────────────────────────▶│ NTP Client  │
-└─────────────┘         NTP Server               └─────────────┘
-```
-
-### SEI Format
-
-- **UUID**: Custom identifier (`a5b3c2d1-e4f5-6789-abcd-ef0123456789`)
-- **Payload Type**: User Data Unregistered (Type 5)
-- **Data Structure**:
-  - UUID (16 bytes)
-  - PTS (8 bytes)
-  - NTP Timestamp (8 bytes: 4 bytes seconds + 4 bytes fraction)
-
-### NTP Synchronization Strategy
-
-#### Encoder (Sender)
-- **Sync Interval**: Every 60 seconds
-- **Trigger**: Automatic periodic sync during encoding
-- **Purpose**: Ensure encoder's NTP time remains accurate
-
-#### Receiver (Source)
-- **Intelligent Sync**: Adaptive synchronization using two triggers
-  1. **Keyframe Trigger**: Syncs on keyframes (IDR) with **minimum 10-second interval**
-  2. **Drift Detection**: Syncs when time drift exceeds configured threshold (default 50ms)
-- **Purpose**: Maintain high precision while minimizing network overhead
-
-### Supported Encoders
-
-| Encoder Name | Codec | Supported Hardware | Status |
-|--------------|-------|--------------------|--------|
-| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ Verified; NVENC/AMF frame transport fixed |
-| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ✅ P2P verified; NVENC/AMF frame transport fixed; ⚠️ limited SLS support |
-
----
+The sender background thread attempts an immediate sync, then waits the configured interval after each request finishes. On NTP-bearing received frames, a keyframe or a time difference above the threshold can trigger sync; both triggers obey the configured minimum interval. Ten seconds is the receiver default, not a fixed lower bound. Receiver requests can still block receive processing: the receive timeout is five seconds per address, and multiple address attempts can take longer. (Sources: [NTP client](src/ntp-client.c), [encoder properties](src/unified-encoder.c), [receiver](src/sei-receiver-source.c).)
 
 ## Building from source
 
-Requirements: CMake 3.20+, Visual Studio 2022 (C++ desktop workload), an OBS Studio 32.2 source tree with `libobs` built, and its deps bundle — FFmpeg 8, i.e. `windows-deps-2026-05-21-x64` or newer. Older bundles ship libavcodec 61 and the configure step refuses them, because a DLL linked against them cannot load in OBS 32.2.
+Use CMake 3.20+, Visual Studio 2022 with the C++ desktop workload, a Release-built OBS source tree and a matching dependency bundle. OBS and SRT sources/binaries are **not bundled** in this repository; `obs/`, `obs-studio-master/` and `srt/` are ignored. (Sources: [CMakeLists.txt](CMakeLists.txt), [.gitignore](.gitignore).)
+
+| Setting | Meaning / default |
+| --- | --- |
+| `OBS_SOURCE_DIR` | Required OBS source root |
+| `OBS_BUILD_DIR` | `OBS_SOURCE_DIR/build` |
+| `OBS_DEPS_DIR` | Last name-sorted matching `obs-deps-20??-??-??-x64` / `windows-deps-20??-??-??-x64` directory under `OBS_SOURCE_DIR/.deps`; set explicitly when multiple bundles coexist |
+| `CMAKE_GENERATOR` | Batch script only; defaults to `Visual Studio 17 2022` |
+
+The first three settings accept CMake `-D` flags or environment variables. The build expects Release paths such as `libobs/Release/obs.lib`. Dependency validation checks the actual `LIBAVCODEC_VERSION_MAJOR >= 62`; bundle names/dates alone do not prove compatibility. (Source: [CMakeLists.txt](CMakeLists.txt).)
+
+Run from the project root, replacing paths with your actual SDK locations:
 
 ```powershell
-mkdir build
-cd build
-cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
-cmake --build . --config Release
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DOBS_SOURCE_DIR="C:/obs-studio" `
+  -DOBS_BUILD_DIR="C:/obs-studio/build" `
+  -DOBS_DEPS_DIR="C:/obs-studio/.deps/windows-deps-2026-08-26-x64"
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/obs-studio
 ```
 
-`OBS_BUILD_DIR` defaults to `OBS_SOURCE_DIR\build` and `OBS_DEPS_DIR` to the newest `obs-deps-*` / `windows-deps-*` bundle under `OBS_SOURCE_DIR\.deps`; set either with `-D` or an environment variable of the same name to override. `build_and_install.bat` runs the same steps (reading `OBS_SOURCE_DIR` from the environment) and stages an installable tree under `out\obs-studio\`. The standalone unit tests need no OBS or GPU: `tests\run_tests.bat`.
+The DLL is `build/plugin/Release/sei-stamper.dll`; the installable tree is `out/obs-studio/`. CMake installation stages only the plugin and `data/`, not SRT or other runtime dependencies.
+
+Alternatively, from the project root:
+
+```powershell
+$env:OBS_SOURCE_DIR = "C:\obs-studio"
+$env:OBS_DEPS_DIR = "C:\obs-studio\.deps\windows-deps-2026-08-26-x64"
+.\build_and_install.bat
+```
+
+The script **deletes and recreates the project's `build/` directory**, stages files under `out/obs-studio/`, and attempts to copy `srt.dll` from a local SRT build or the OBS runtime directory. It does not install directly into the system OBS installation. (Source: [build_and_install.bat](build_and_install.bat).)
+
+## Verification and troubleshooting
+
+Run from the project root:
+
+```powershell
+.\tests\run_tests.bat
+```
+
+The local run on **2026-09-05 passed 60 checks with 0 failures**. These cover NTP conversion and sync anchoring, SEI payload layout, NAL scanning and extradata conversion. The test file copies pure functions instead of linking production sources; it does not test NTP networking, threads, OBS loading, GPUs or multi-stream synchronization. (Sources: [runner](tests/run_tests.bat), [test implementation](tests/test_ntp_sei.c).)
+
+On the same date, the 1.3.0 Windows x64 Release build passed using MSVC 19.50 / CMake 4.2.1 / Ninja. DLL loading, `obs_module_ver()` and SRT protocol lookup passed against the official OBS 32.2.2 portable runtime. This package uses official 32.2.2 headers and OBS/pthread import libraries generated from that version's DLL exports. OBS plugin initialization, GPU processing and streaming were not tested. (Source: build record included in the [v1.3.0 release assets](https://github.com/ikenainanodesu/SEI-Stamper/releases/tag/v1.3.0).)
+
+Check the OBS log for deployment issues:
+
+- **Plugin missing:** check DLL/locale paths and matching OBS/FFmpeg runtime libraries.
+- **Encoder creation fails:** check the selected hardware, codec, driver and backend initialization error.
+- **SRT connection fails:** check URL, connection modes, listener availability, firewall and FFmpeg SRT support.
+- **No NTP SEI:** look for `NTP sync successful` and wait for the next keyframe. Check DNS, UDP port and socket errors if requests fail.
+- **Stuttering or inconsistent alignment:** check time sources, receiver sync intervals and request duration, then measure with visible frame counters or timecode.
+
+`ffprobe -select_streams v:0 -show_frames output.mp4` can help inspect frames. Generic SEI output does not establish that this plugin's UUID/timestamps are correct or that streams are synchronized; validate the custom payload below. (Source: [SEI construction and parsing](src/sei-handler.c).)
+
+## SEI format
+
+The custom payload is **32 bytes**, with numeric fields written in big-endian order. This excludes NAL headers, payload type/length, escaping and trailing bits.
+
+| Field | Size |
+| --- | --- |
+| UUID `a5b3c2d1-e4f5-6789-abcd-ef0123456789` | 16 bytes |
+| Frame PTS (int64) | 8 bytes |
+| NTP seconds (uint32) | 4 bytes |
+| NTP fraction (uint32) | 4 bytes |
+
+The payload uses User Data Unregistered (type 5), H.264 NAL type 6 or H.265 Prefix SEI type 39. This packaging is not an AV1 format. (Sources: [sei-handler.h](src/sei-handler.h), [sei-handler.c](src/sei-handler.c), [insertion path](src/nvenc-encoder.c).)
 
 ---
 
@@ -223,35 +174,18 @@ See the [LICENSE](LICENSE) file for details.
 
 ### v1.3.0 (2026-09-04)
 
-**🔧 NTP reliability (cross-platform):**
-- 🪟 **Fixed NTP on Windows**: `SO_RCVTIMEO` was set with a `struct timeval`, but Winsock expects a `DWORD` of milliseconds — it read `tv_sec` (5) as a **5 ms** timeout, so every sync failed with `WSAETIMEDOUT`. NTP never worked on Windows before this.
-- 🌐 **Try every resolved address**: `getaddrinfo` can return several addresses (often an IPv6 record first); the client now tries each until one answers instead of only the first.
-- 🛡️ **Response validation**: reject Kiss-o'-Death (stratum 0), unsynchronized (stratum ≥ 16) and non-server-mode replies instead of anchoring on a bogus time.
-- 🐛 **Receive error handling**: a failed `recvfrom` no longer slips past a signed/unsigned length check; failures log the socket error code so the cause is visible.
-- 🔒 **Request/reply pairing**: a reply must echo our originate timestamp (T1), so a stale, cross-talk or spoofed datagram can no longer re-anchor the clock.
-- 🎛️ **Sync interval setting fixed**: the unified encoder saves `ntp_sync_interval_ms` but the backends read `ntp_sync_interval`, so the UI knob was dead and the interval always fell back to the hard-coded 60 s.
-- 🎯 **Offset actually applied**: the clock was anchored at the server's transmit time (T3) and ignored the computed offset, so it reported a time half a round trip in the past — a skew that differs per network path, i.e. between encoders. It now anchors at the offset-corrected receive time (T4 + offset) and logs the round-trip delay alongside the offset.
+- Corrected the Windows NTP receive timeout to 5000 ms, added fallback across resolved addresses, and improved receive error logging.
+- Validate server mode, leap indicator, stratum and the echoed originate timestamp. Request/reply matching is not cryptographic authentication.
+- Anchor the clock at the offset-corrected receive time (T4 + offset), logging offset and round-trip delay.
+- Move sender NTP requests to background threads, use the unified `ntp_sync_interval_ms` setting and configurable port, and read/stamp timestamps only on keyframes.
+- Reinsert available SPS/PPS(/VPS) on NVENC/AMF keyframes missing SPS; reject HEVC HVCC data in the H.264 AVCC conversion fallback. This does not guarantee header recovery for every HEVC stream.
+- Update AMF global-header handling and map the `fast` preset to `speed`; AMD hardware validation remains outstanding.
+- Use `AV_FRAME_FLAG_KEY` for FFmpeg 8, configurable OBS SDK paths, and a libavcodec major-version floor of 62.
+- Add standalone pure-function checks. See the validation section above for the current run and coverage limits.
 
-**🚀 Non-blocking sync:**
-- ⏱️ **Background NTP thread**: sync now runs on its own thread (opt-in `ntp_client_start_background_sync`), so the network round-trip never blocks the encode path; encoders just read the latest cached time. State is mutex-guarded for a consistent snapshot.
-- 🔇 **NTP read only on keyframes**: every encoder fetched the NTP time for every frame, so an unreachable server produced two warnings per frame (about 120/s at 60 fps). The lookup and the warning now happen only where the SEI is stamped — on keyframes — and the software encoder no longer stamps a zeroed timestamp while the client is unsynced.
-- 🔧 **Configurable NTP port** via the `ntp_port` setting (defaults to 123).
+Sources: [NTP client](src/ntp-client.c), [NVENC](src/nvenc-encoder.c), [AMF](src/amd-encoder.c), [QSV](src/qsv-encoder.c), [receiver](src/sei-receiver-source.c), [CMake](CMakeLists.txt), [tests](tests/test_ntp_sei.c).
 
-**🎞️ Encoding:**
-- 🔑 **Self-contained keyframes (NVENC & AMF)**: SPS/PPS(/VPS) are re-injected into any keyframe that doesn't already carry an SPS — independent of SEI presence, and a keyframe led by a lone AUD no longer counts as having params in-band — so a mid-stream MPEG-TS/SRT joiner can always decode from the next keyframe.
-- 🧯 **AMF on avcodec 62**: the AMF path set no global header, so newer FFmpeg failed with "Failed to retrieve headers"; header handling now mirrors NVENC (extradata → Annex-B + keyframe re-injection). Not yet verified on AMD hardware.
-- 🚧 **AVCC fallback gated to H.264**: HEVC HVCC extradata (which also starts with `configurationVersion 0x01`) is rejected instead of mis-parsed as AVCC parameter sets.
-- 🛠️ **AMF preset mapping**: the unified encoder's `fast` preset is mapped to AMF's `speed` (AMF's `quality` option rejects `fast`).
-
-**🧩 Compatibility:**
-- ✅ **FFmpeg 8 / avcodec 62**: use `AV_FRAME_FLAG_KEY` instead of the removed `AVFrame::key_frame` field so the receiver source builds on current FFmpeg.
-
-**🏗️ Build:**
-- ⚙️ **Portable CMake**: `OBS_SOURCE_DIR` / `OBS_BUILD_DIR` / `OBS_DEPS_DIR` (flags or environment variables) replace the hard-wired nested `obs-studio-master` layout; deps discovery also covers the newer `windows-deps-*` bundles, and configure refuses bundles older than FFmpeg 8 (libavcodec 62 — `windows-deps-2026-05-21` and newer), since a DLL linked against libavcodec 61 cannot load in OBS 32.2. `build_and_install.bat` takes the same variables from the environment.
-
-**📝 Housekeeping:**
-- Source comments translated to English throughout.
-- 🧪 **Standalone unit tests** under `tests/` (`run_tests.bat`, plain `cl`/`gcc` — no OBS or GPU needed): NTP conversion and sync anchor, SEI payload layout, NAL scanning, extradata conversion. 60 checks.
+The entries below are retained historical release notes, not current compatibility or validation claims.
 
 ### v1.2.3-beta (2026-06-07)
 
@@ -280,17 +214,17 @@ See the [LICENSE](LICENSE) file for details.
 ### v1.2.0 (2026-01-22)
 
 **🎉 New Features:**
-- ✨ **Multi-Codec Support**: Added full support for **H.265 (HEVC)** and **AV1** encoding.
+- ✨ **Multi-Codec Support**: Added full support for **H.265 (HEVC)** and ~~**AV1**~~ encoding (AV1 synchronization is currently unavailable).
 - 🛠️ **Three Independent Encoders**:
   - `SEI STAMPER (H.264)`
   - `SEI STAMPER (H.265)`
-  - `SEI STAMPER (AV1)`
+  - ~~`SEI STAMPER (AV1)`~~ (synchronization currently unavailable)
   - Each supports hardware acceleration (Intel/NVIDIA/AMD).
 - 🧠 **Receiver Configuration**: The receiver requires manual selection of the matching codec format for proper decoding.
 
 **⚠️ Important limitation:**
 - **H.264** and **H.265** are fully supported for SRT streaming.
-- **AV1** encoding is available, but OBS Studio's SRT output may not support AV1 depending on the version.
+- ~~**AV1** encoding is available, but OBS Studio's SRT output may not support AV1 depending on the version.~~ **Current status: AV1 synchronization is unavailable.**
 
 ### v1.1.3 (2026-01-04)
 
@@ -317,4 +251,4 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 **Current Version**: 1.3.0
-**Last Updated**: 2026-09-04
+**Last Updated**: 2026-09-05

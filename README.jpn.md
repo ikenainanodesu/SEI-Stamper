@@ -1,323 +1,156 @@
 # SEI Stamper プラグイン
 
-<img src="pic\sei_stamper_gau.png" alt="isolated" width="250"/>
+<img src="pic/sei_stamper_gau.png" alt="SEI Stamper" width="250"/>
 
+NTPタイムスタンプと独自SEIによる、OBS Studioの複数映像ストリームの時刻合わせ。
 
-**OBS Studio用フレームレベルビデオ同期**
+[English](README.md) | [中文](README.chs.md) | [日本語](README.jpn.md)
 
-[English](README.md) | [中文](README.chs.md) | [日本語](#日本語)
+## 現在のプロジェクト状態
 
----
+ソースのバージョンは **1.3.0** です。本書は現在のコードとビルドスクリプトを説明します。ソースのバージョン番号だけでは、対応するリリースパッケージの公開は確認できません。（出典：[CMakeLists.txt](CMakeLists.txt)、[モジュール登録](src/sei-stamper-plugin.c)）
 
-## 日本語
+| 機能 | 現在の実装と制限 |
+| --- | --- |
+| H.264 / H.265 | Intel QuickSync、NVIDIA NVENC、AMD AMFのバックエンドでキーフレームにNTP SEIを挿入 |
+| ~~AV1~~ | **現在、同期は利用できません。** エンコーダと受信側の選択肢は残っていますが、タイムスタンプ挿入はH.264/H.265 NAL方式のままです。AV1専用メタデータ実装がないため、時刻同期の対応形式には含めません |
+| 受信側 | FFmpeg経由でSRTを開き、映像と利用可能な音声トラックをデコード。コーデックは自動検出が既定で、手動指定も可能 |
+| NTP | 送信側はバックグラウンド同期。受信側は初期化時と受信処理中に同期リクエストを実行 |
+| 検証範囲 | Windows x64 Releaseビルドと独立テスト60項目が成功。公式OBS 32.2.2ランタイムでDLL依存関係のロード・APIバージョン・SRTプロトコル照会を確認。OBSプラグイン初期化、GPUエンコード、複数SRTストリームの実測は未実施 |
 
-### 概要
+実装の出典：[統合エンコーダ](src/unified-encoder.c)、[QSV](src/qsv-encoder.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)、[受信側](src/sei-receiver-source.c)、[テスト](tests/test_ntp_sei.c)。
 
-SEI Stamperは、SEI（補足拡張情報）を使用してビデオストリームにNTPタイムスタンプを埋め込むことで、複数のストリーム間で**フレームレベルのビデオ同期**を実現するOBS Studioプラグインです。
+H.265のSLS経由での利用は、従来の「限定的な対応」という状態を維持しており、今回は再検証していません。AMFにはFFmpeg 8向け修正がありますが、今回AMD実機では検証していません。同期誤差、総遅延、CPU負荷は実際の機器・ネットワーク・出力設定で測定してください。固定の精度や性能は保証しません。
 
-**主な機能：**
-- 🎯 **フレーム精度の同期** - NTPタイムスタンプを使用
-- 📡 **複数のハードウェアエンコーダ** - Intel QuickSync、NVIDIA NVENC、AMD AMF
-- 🛠️ **NVENC/AMFのフレーム伝送修正** - 最新コードでは、NVIDIA NVENCおよびAMD AMFのH.264/H.265ビデオフレーム出力が復旧しています
-- 🎞️ **マルチコーデックサポート** - **H.264** および **H.265 (HEVC)** に対応
-- 🚀 **GPUアクセラレーション** - SEI対応のハードウェアアクセラレーションH.264エンコード
-- 🔄 **送信機と受信機** - エンコードとデコードの完全なソリューション
-- 🌐 **SRTストリーミング** - 低遅延ストリーミング用のSRT受信機を内蔵
-- ⏱️ **マイクロ秒精度** - プロフェッショナルアプリケーション向けのNTPベースタイミング
-
-### 使用例
-
-- マルチカメラライブプロダクション同期
-- リモートスタジオのフレームレベル同期
-- 放送品質のマルチソース位置合わせ
-- ライブコンサート/イベントのマルチアングル録画
-
-### デモ動画
-
-📺 **[YouTubeでデモ動画を見る](https://youtu.be/JhizRlUpSlg)**
-
-このデモンストレーションでは、OBSから同じ設定で4つのSRTストリームをローカルネットワーク経由で送信しています。本プラグインを使用すると、4つのストリーム全てが±2フレーム以内の精度で同期されます。
-
----
+[プロジェクトのデモ動画](https://youtu.be/JhizRlUpSlg)は過去のデモとして掲載しており、現行版のベンチマークではありません。
 
 ## インストール
 
-### クイックインストール（推奨）
+現在のビルド設定は **Windows x64 / OBS Studio 32.2系 / FFmpeg 8** 向けで、libavcodecのメジャーバージョンが62未満の依存パッケージを拒否します。ビルド時と実行時のOBS・FFmpegライブラリを合わせる必要があり、OBSのバージョン番号が新しいだけでは互換性を判断できません。（出典：[CMakeLists.txt](CMakeLists.txt)）
 
-[Releases](https://github.com/ikenainanodesu/sei-stamper/releases)ページから最新リリースをダウンロードしてください。
+1. OBSを終了し、[Releases](https://github.com/ikenainanodesu/SEI-Stamper/releases)から環境に合うパッケージを選ぶか、下記の手順でビルドします。
+2. プラグインとロケールをOBSのインストール先にコピーします。既定の `C:\Program Files\obs-studio` への書き込みには通常管理者権限が必要です。
+3. 対応するSRTランタイムが同梱されていれば、パッケージの構成に従ってコピーします。ビルドスクリプトは発見した場合のみ `srt.dll` をコピーします。
+4. OBSを再起動し、ログの `SEI Stamper Plugin loaded` とエンコーダ・受信ソースの登録を確認します。
 
-リリースパッケージには以下が含まれます：
-- `sei-stamper.dll` - メインプラグイン
-- `srt.dll` - 受信機機能用のSRTライブラリ
-- 多言語サポート用のロケールファイル
+```text
+obs-studio/
+├── obs-plugins/64bit/
+│   ├── sei-stamper.dll
+│   └── srt.dll                 # 同梱され、実行環境で必要な場合
+└── data/obs-plugins/sei-stamper/locale/
+    ├── en-US.ini
+    └── zh-CN.ini
+```
 
-### 必要条件
-
-- OBS Studio 32.2以降（プラグインは FFmpeg 8 / libavcodec 62 にリンクしており、それより古い OBS には同梱されていません）
-- 最新の検証済みビルド環境：OBS Studio 32.2.2 + `windows-deps-2026-08-26-x64`
-- Windows 10/11 (64ビット)
-
-### 手動インストール手順
-
-1. **[Releases](https://github.com/ikenainanodesu/sei-stamper/releases)ページからリリースパッケージをダウンロード**
-
-2. **OBSプラグインディレクトリにコピー：**
-   ```powershell
-   # プラグインDLLをコピー
-   Copy-Item sei-stamper.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   
-   # SRTライブラリをコピー
-   Copy-Item srt.dll "C:\Program Files\obs-studio\obs-plugins\64bit\"
-   ```
-
-3. **ロケールファイルをコピー：**
-   ```powershell
-   # ディレクトリを作成
-   New-Item -ItemType Directory -Force `
-        "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale"
-   
-   # ロケールファイルをコピー
-   Copy-Item data\locale\* `
-        "C:\Program Files\obs-studio\data\obs-plugins\sei-stamper\locale\" -Recurse
-   ```
-
-4. **OBS Studioを再起動**
-
----
+UIの言語リソースは英語と簡体字中国語です。日本語READMEがあっても日本語UIは同梱されていません。SRT受信には使用するFFmpegランタイムのSRT対応が必要で、DLLを1個コピーするだけで対応が保証されるわけではありません。（出典：[ビルドスクリプト](build_and_install.bat)、[ロケール](data/locale)、[受信側](src/sei-receiver-source.c)）
 
 ## 使用方法
 
-### 送信機（エンコーダ）
+### 送信側
 
-1. **設定 → 出力 → 出力モード：詳細**を開く
-2. 希望するコーデック形式に基づいてSEI Stamperエンコーダを選択：
-   - **SEI Stamper (H.264)** - 互換性重視
-   - **SEI Stamper (H.265)** - 高圧縮率 (HEVC)、帯域幅を30-50%節約。（注意：P2PのCaller-Listener同期をサポートしていますが、SLSサーバーでの利用は限定的で不安定な場合があります。現在改善策を模索中です）
-3. エンコーダ設定で**ハードウェアエンコーダ**を選択：
-   - Intel QuickSync
-   - NVIDIA NVENC
-   - AMD AMF
+1. OBSの「設定 → 出力」で出力モードを「詳細」にします。
+2. `SEI STAMPER (H.264)` または `SEI STAMPER (H.265)` を選びます。
+3. `Hardware Encoder` で対応するIntel QuickSync、NVIDIA NVENC、AMD AMFを選びます。既定はIntelで、自動的なGPU選択ではありません。
+4. ビットレート、キーフレーム間隔、NTPサーバー、ポート、同期間隔を設定します。時刻合わせに使う各送信側・受信側でNTP時刻源をそろえます。
+5. OBSの出力設定で配信URLまたは録画先を指定して出力を開始します。エンコーダ自体はSRTリスナーを作成しません。
 
-> **NVENC/AMFの状態**: 最新コードにはPR #6の修正が含まれており、NVIDIA NVENCおよびAMD AMFのH.264/H.265エンコーダで、配信出力にビデオフレームが送られない場合がある問題を修正しています。古いパッケージから更新しても音声のみ、または映像フレームが出ない場合は、この修正を含むバージョンを再ビルドまたはインストールしてください。
+既定値は **2500 kbps**、キーフレーム間隔 **2秒**、Bフレーム **0**、NTPサーバー `pool.ntp.org`、ポート **123**、同期間隔 **60000 ms** です。（出典：[統合エンコーダ](src/unified-encoder.c)）
 
-4. エンコーダプロパティを設定：
-   - **NTPサーバー**: `time.windows.com`（または任意のNTPサーバー）
-   - **NTPポート**: `123`（デフォルト）
-   - **NTP同期を有効化**: ✓
-5. ストリーミング/録画を開始
+現在の3つのハードウェアバックエンドはNTPを直接有効化し、統合UIの `ntp_enabled` を読み取っていません。「Enable NTP Sync」を外しても送信側NTPを無効化できるとは限りません。最初の同期成功前には有効なNTP SEIを挿入せず、成功後はキーフレームでのみ時計を読み取り、タイムスタンプを挿入します。（出典：[QSV](src/qsv-encoder.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)）
 
-> **⚠️ H.265に関する注意**: H.265はポイントツーポイント（Caller-Listener）同期をサポートしています。しかし、SLSサーバーでのサポートは現在限定的で、不安定なパフォーマンスを示す可能性があります。現在、改善と最適化のための解決策を積極的に探しています。
+### 受信側
 
-### 受信機（ソース）
+1. シーンに **SEI Receiver** を追加します。
+2. 送信機または中継サーバーのSRT URLを入力し、双方の接続モード・アドレス・ポートを合わせます。既定の `srt://127.0.0.1:9000` は他のマシンに接続する場合に変更が必要です。
+3. 「Codec Format」は原則「Auto」のまま使用します。手動指定する場合は送信側のH.264/H.265と一致させます。
+4. NTPを有効にして送信側と同じ時刻源を指定します。受信側の既定値 `time.windows.com` は送信側と異なります。
+5. デコードはソフトウェアが既定です。QSV、NVDEC、AMFの利用可否は機器・ドライバー・FFmpegビルドに依存します。
 
-1. OBSシーンで、**ソースを追加 +**をクリック
-2. **SEI Receiver**を選択
-3. ソースを設定：
-   - **SRT URL**: `srt://送信機IP:ポート`（例：`srt://192.168.1.100:9000`）
-   - **NTP同期を有効化**: ✓
-   - **NTPサーバー**: 送信機と同じ
-4. **OK**をクリック
+URLはクエリーパラメーターを含め、そのままFFmpegへ渡されます。利用可能な音声トラックもデコードします。（出典：[受信側の設定・接続処理](src/sei-receiver-source.c)）
 
-**注意**：受信機は現在、ストリームのコーデック形式（H.264/H.265）を**手動で一致させる必要があります**。受信機の設定で、送信機と同じ「コーデック形式」を選択してください。
+### NTP設定と動作
 
----
+| 設定 | 送信側 | 受信側 |
+| --- | --- | --- |
+| 既定のサーバー | `pool.ntp.org` | `time.windows.com` |
+| ポート既定値 / UI範囲 | 123 / 1–65535 | 123 / 1–65535 |
+| 同期間隔の既定値 | 60000 ms | 10000 ms |
+| 同期間隔のUI範囲 | 1000–300000 ms | 100–3600000 ms |
+| ドリフト閾値の既定値 / UI範囲 | 項目なし | 50 ms / 10–1000 ms |
 
-## 検証
-
-### FFprobeでSEIデータを確認
-
-```powershell
-# フレーム情報を表示
-ffprobe -select_streams v:0 -show_frames output.mp4 2>&1 | Select-String "SEI"
-
-# 詳細なフレームデータ
-ffprobe -select_streams v:0 -show_frames -show_entries frame=pict_type output.mp4
-```
-
-### MediaInfoで確認
-
-```powershell
-MediaInfo --Full output.mp4 | Select-String "SEI"
-```
-
----
-
-## 技術詳細
-
-### アーキテクチャ
-
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│    送信機    │         │  SRTストリーム│         │    受信機    │
-│ (エンコーダ) │───────▶│   + SEI      │───────▶│  (ソース)   │
-└─────────────┘         └──────────────┘         └─────────────┘
-      │                                                  │
-      ▼                                                  ▼
-┌─────────────┐                                  ┌─────────────┐
-│ NTPクライアント│◀────────────────────────────────▶│ NTPクライアント│
-└─────────────┘         NTPサーバー              └─────────────┘
-```
-
-### SEI形式
-
-- **UUID**: カスタム識別子（`a5b3c2d1-e4f5-6789-abcd-ef0123456789`）
-- **ペイロードタイプ**: User Data Unregistered（タイプ5）
-- **データ構造**:
-  - UUID（16バイト）
-  - PTS（8バイト）
-  - NTPタイムスタンプ（8バイト：秒4バイト + 小数4バイト）
-
-### NTP同期戦略
-
-#### エンコーダ（送信機）
-- **同期間隔**: 60秒ごと
-- **トリガー**: エンコード中の自動定期同期
-- **目的**: エンコーダのNTP時刻を正確に保つ
-
-#### 受信機（ソース）
-- **インテリジェント同期**: 2つのトリガーを使用したアダプティブ同期
-  1. **キーフレームトリガー**: SEI付きキーフレーム（IDR）で同期（**最小10秒間隔**）
-  2. **ドリフト検出**: 時刻ズレが設定した閾値を超えたとき（デフォルト50ms）
-- **目的**: ネットワークオーバーヘッドを最小限にしながら高精度を維持
-- **パフォーマンス**: 最小同期間隔が過度なNTPリクエストを防止
-
-### NTP 設定推奨値
-
-#### エンコーダ設定
-
-| パラメータ | 範囲 | デフォルト | 推奨値 |
-|-----------|-------|------------|----------|
-| NTP 同期間隔 | 1-600秒 | 60秒 | **30-120秒** |
-
-#### 受信機設定
-
-| パラメータ | 範囲 | デフォルト | 推奨値 |
-|-----------|-------|------------|----------|
-| NTP ドリフト閾値 | 10-1000ms | 50ms | **30-100ms** |
-| NTP 同期間隔 | 100ms-1h | 10s | **10-60秒** |
-
-> **ℹ️ 注意**: 同期間隔は完全に設定可能になりました。パフォーマンス問題を防ぐため、設定値（デフォルト10秒）による最小間隔が適用されます。ネットワークとCPUが頻繁なNTPリクエストを処理できる場合は、この値を下げることができます。
-
-### サポートされているエンコーダ
-
-| エンコーダ名 | コーデック | サポートハードウェア | ステータス |
-|-------------|------------|---------------------|------------|
-| SEI Stamper (H.264) | H.264/AVC | Intel, NVIDIA, AMD | ✅ 確認済み。NVENC/AMFのフレーム伝送を修正済み |
-| SEI Stamper (H.265) | H.265/HEVC | Intel, NVIDIA, AMD | ✅ P2P確認済み。NVENC/AMFのフレーム伝送を修正済み。⚠️ SLSサポートは限定的 |
-
----
+送信側はバックグラウンドスレッドの開始直後に同期を試み、各リクエスト終了後に設定した間隔だけ待機します。受信側ではNTP付きフレームのキーフレーム判定または時刻差が閾値を超えた場合に同期し、いずれも設定した最小間隔で制限されます。10秒は既定値で、固定の下限ではありません。受信側の同期は受信処理をブロックし得ます。受信タイムアウトはアドレスごとに5秒で、複数アドレスへの試行ではさらに時間がかかる場合があります。（出典：[NTPクライアント](src/ntp-client.c)、[エンコーダ設定](src/unified-encoder.c)、[受信側](src/sei-receiver-source.c)）
 
 ## ソースからビルド
 
-### 必要条件
+CMake 3.20以降、C++デスクトップ開発ワークロード付きVisual Studio 2022、Releaseビルド済みのOBSソースツリーと対応する依存パッケージが必要です。OBS/SRTのソースやバイナリは**同梱されていません**。`obs/`、`obs-studio-master/`、`srt/` はGitの除外対象です。（出典：[CMakeLists.txt](CMakeLists.txt)、[.gitignore](.gitignore)）
 
-- **CMake** 3.20以降
-- **Visual Studio 2022**（C++デスクトップ開発ワークロード付き）
-- **OBS Studio 32.2 ソースコード**（`libobs` をビルド済み、`OBS_SOURCE_DIR` で指定）
-- **FFmpeg 8 ライブラリ**（OBS の依存関係バンドルが提供：`windows-deps-2026-05-21-x64` 以降）
-- **libsrt**（リポジトリに含まれる）
+| 設定 | 内容 / 既定値 |
+| --- | --- |
+| `OBS_SOURCE_DIR` | 必須。OBSソースのルート |
+| `OBS_BUILD_DIR` | `OBS_SOURCE_DIR/build` |
+| `OBS_DEPS_DIR` | `OBS_SOURCE_DIR/.deps` の `obs-deps-20??-??-??-x64` / `windows-deps-20??-??-??-x64` を名前順に並べた末尾の項目。複数ある場合は明示指定を推奨 |
+| `CMAKE_GENERATOR` | バッチスクリプトのみ。既定は `Visual Studio 17 2022` |
 
-### クイックビルド（推奨）
+最初の3項目はCMakeの `-D` または同名の環境変数で設定できます。`libobs/Release/obs.lib` などのRelease配置を前提としています。依存チェックは実際の `LIBAVCODEC_VERSION_MAJOR >= 62` を確認し、パッケージ名や日付だけでは互換性を保証しません。（出典：[CMakeLists.txt](CMakeLists.txt)）
 
-ビルド経験のないユーザー向けに、自動ビルドスクリプトを使用：
+プロジェクトルートで実行します。パスは実際の環境に合わせてください。
 
-1. **ビルドスクリプトを実行：**
-   ```powershell
-   # プロジェクトディレクトリに移動
-   cd sei-stamper
-   
-   # libobs をビルド済みの OBS Studio 32.2 ソースディレクトリを指定し、自動ビルドスクリプトを実行
-   $env:OBS_SOURCE_DIR = "C:\obs-studio"
-   .\build_and_install.bat
-   ```
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DOBS_SOURCE_DIR="C:/obs-studio" `
+  -DOBS_BUILD_DIR="C:/obs-studio/build" `
+  -DOBS_DEPS_DIR="C:/obs-studio/.deps/windows-deps-2026-08-26-x64"
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/obs-studio
+```
 
-2. **プラグインを取得：**
-   - ビルド成功後、プラグインファイルは`out/obs-studio/`ディレクトリに生成されます
-   - プラグイン構造はOBSインストールディレクトリを反映
+DLLは `build/plugin/Release/sei-stamper.dll`、インストール用ツリーは `out/obs-studio/` に出力されます。CMakeのインストール対象はプラグインと `data/` のみで、SRT等のランタイムは自動収集しません。
 
-3. **インストール：**
-   - `out/obs-studio/`の内容をOBSインストールディレクトリにコピー
-   - デフォルト場所：`C:\Program Files\obs-studio`
-   - **管理者権限が必要**
+プロジェクトルートからバッチスクリプトを使う方法もあります。
 
-### 手動ビルド手順
+```powershell
+$env:OBS_SOURCE_DIR = "C:\obs-studio"
+$env:OBS_DEPS_DIR = "C:\obs-studio\.deps\windows-deps-2026-08-26-x64"
+.\build_and_install.bat
+```
 
-ビルドプロセスを手動で制御したい場合：
+このスクリプトは**プロジェクトの `build/` を削除して作り直します**。成果物を `out/obs-studio/` に配置し、ローカルのSRTビルドまたはOBS実行ディレクトリから `srt.dll` のコピーを試みます。システムのOBSへ直接インストールする処理ではありません。（出典：[build_and_install.bat](build_and_install.bat)）
 
-1. **リポジトリをクローン：**
-   ```bash
-   git clone https://github.com/ikenainanodesu/sei-stamper.git
-   cd sei-stamper
-   ```
+## 検証とトラブルシューティング
 
-2. **CMakeを設定：**
-   ```powershell
-   mkdir build
-   cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64 -DOBS_SOURCE_DIR=C:\obs-studio
-   ```
-   `OBS_BUILD_DIR` は既定で `OBS_SOURCE_DIR\build`、`OBS_DEPS_DIR` は `OBS_SOURCE_DIR\.deps` 内の最新の `obs-deps-*` / `windows-deps-*` バンドルになります（`-D` オプションまたは同名の環境変数で上書き可能）。依存関係バンドルは FFmpeg 8（libavcodec 62、つまり `windows-deps-2026-05-21-x64` 以降）が必要で、それより古いバンドルは configure 時に拒否されます。libavcodec 61 にリンクした DLL は OBS 32.2 で読み込めないためです。
+プロジェクトルートで独立テストを実行します。
 
-3. **ビルド：**
-   ```powershell
-   cmake --build . --config Release
-   ```
+```powershell
+.\tests\run_tests.bat
+```
 
-4. **インストール（オプション）：**
-   ```powershell
-   cmake --install . --config Release
-   ```
+**2026-09-05のローカル実行結果は60項目成功、0項目失敗**でした。NTP変換と同期アンカー、SEI配置、NAL走査、extradata変換を確認します。ただし本テストは純粋関数をテストファイル内に複製しており、本番ソースを直接リンクしません。NTP通信、スレッド、OBSへのロード、GPU処理、複数ストリームの同期は対象外です。（出典：[実行スクリプト](tests/run_tests.bat)、[テスト実装](tests/test_ntp_sei.c)）
 
-5. **出力ファイル：**
-   - プラグイン：`build/plugin/Release/sei-stamper.dll`
-   - または簡単インストール用の`out/obs-studio/`ディレクトリ構造を使用
+同日、MSVC 19.50 / CMake 4.2.1 / Ninjaで1.3.0 Windows x64 Releaseビルドに成功し、公式OBS 32.2.2ポータブルランタイムでDLLロード、`obs_module_ver()`、SRTプロトコル照会を確認しました。公式32.2.2ヘッダーと、同版DLLのエクスポートから生成したOBS/pthreadインポートライブラリを使用しています。OBSプラグイン初期化やGPU・配信テストは未実施です。（出典：[v1.3.0リリース添付のビルド記録](https://github.com/ikenainanodesu/SEI-Stamper/releases/tag/v1.3.0)）
 
----
+OBSログで以下を確認します。
 
-## トラブルシューティング
+- **プラグインが表示されない**：DLL・ロケールの配置とOBS/FFmpegランタイムの一致を確認。
+- **エンコーダ生成失敗**：選択したGPU・コーデック・ドライバーと各バックエンドの初期化エラーを確認。
+- **SRT接続失敗**：URL、接続モード、リスナー、ファイアウォール、FFmpegのSRT対応を確認。
+- **NTP SEIがない**：`NTP sync successful` を確認し、次のキーフレームを待つ。失敗時はDNS・UDPポート・socketエラーを確認。
+- **カクつき・同期ずれ**：時刻源、受信側の同期間隔、リクエスト所要時間を確認し、フレーム番号やタイムコードで実測。
 
-### 問題：エンコーダがOBSに表示されない
+`ffprobe -select_streams v:0 -show_frames output.mp4` でフレーム情報を補助的に確認できます。一般的なSEI表示だけでは、本プラグインのUUID・時刻の正しさや複数ストリームの同期は証明できません。以下の独自ペイロードを確認してください。（出典：[SEI構築・解析](src/sei-handler.c)）
 
-**解決策：**
-- プラグインDLLが`obs-plugins/64bit/`ディレクトリにあることを確認
-- OBSログで読み込みエラーを確認
-- OBSバージョンが32.2以降であることを確認
+## SEI形式
 
-### 問題：受信機がSRTに接続できない
+独自ペイロードは **32バイト** で、数値はビッグエンディアンです。NALヘッダー、タイプ・長さ、エスケープ、終端ビットは含みません。
 
-**解決策：**
-- `srt.dll`がインストールされていることを確認
-- ファイアウォール設定を確認
-- SRT URL形式を確認：`srt://ip:port`
+| フィールド | サイズ |
+| --- | --- |
+| UUID `a5b3c2d1-e4f5-6789-abcd-ef0123456789` | 16バイト |
+| フレームPTS（int64） | 8バイト |
+| NTP秒（uint32） | 4バイト |
+| NTP小数（uint32） | 4バイト |
 
-### 問題：SEIデータが見つからない
-
-**解決策：**
-- NTPサーバーがアクセス可能であることを確認
-- 「NTP同期を有効化」がチェックされていることを確認
-- OBSログでNTP同期ステータスを確認
-
----
-
-## パフォーマンス
-
-- **CPUオーバーヘッド**: < 1%（SEI挿入）
-- **NTP同期頻度**: 60秒ごと
-- **フレーム精度**: 60fpsで±1フレーム
-- **レイテンシ**: ~100ms（SRT 120msレイテンシ設定）
-
----
-
-## コントリビューション
-
-コントリビューションを歓迎します！プルリクエストをお気軽に送信してください。
-
-### 開発ガイドライン
-
-1. 既存のコードスタイルに従う
-2. 複雑なロジックにはコメントを追加
-3. 変更を徹底的にテスト
-4. 必要に応じてドキュメントを更新
+User Data Unregistered（タイプ5）を使用し、H.264はNALタイプ6、H.265はPrefix SEIタイプ39です。AV1用の形式ではありません。（出典：[sei-handler.h](src/sei-handler.h)、[sei-handler.c](src/sei-handler.c)、[挿入処理](src/nvenc-encoder.c)）
 
 ---
 
@@ -349,6 +182,21 @@ GPL-2.0 License - OBS Studioのライセンスに準拠
 
 ## リリースノート
 
+### v1.3.0 (2026-09-04)
+
+- WindowsのNTP受信タイムアウトを5000 msに修正し、解決された各アドレスへの順次試行と受信エラーログを追加。
+- サーバーモード、閏秒指示、stratum、要求時刻のエコーを検証。要求と応答の照合は暗号認証ではありません。
+- オフセット補正済み受信時刻（T4 + offset）を時計の基準にし、オフセットと往復遅延を記録。
+- 送信側NTPをバックグラウンド化し、`ntp_sync_interval_ms` と設定可能なポートを使用。時刻の取得・挿入はキーフレームのみ。
+- NVENC/AMFでSPSのないキーフレームに利用可能なSPS/PPS(/VPS)を再挿入。H.264 AVCC変換のフォールバックではHEVC HVCCを拒否するため、全HEVCストリームのヘッダー復元を保証するものではありません。
+- AMFのグローバルヘッダー処理と `fast` → `speed` のプリセット変換を修正。AMD実機検証は未完了。
+- FFmpeg 8の `AV_FRAME_FLAG_KEY` を使用。OBS SDKパスを設定可能にし、libavcodecメジャーバージョン62以上を要求。
+- 独立した純粋関数テストを追加。現在の結果と検証範囲は上記を参照。
+
+出典：[NTP](src/ntp-client.c)、[NVENC](src/nvenc-encoder.c)、[AMF](src/amd-encoder.c)、[QSV](src/qsv-encoder.c)、[受信側](src/sei-receiver-source.c)、[CMake](CMakeLists.txt)、[テスト](tests/test_ntp_sei.c)。
+
+以下は過去のリリース記録です。当時の互換性・検証内容は現行版の状態を示すものではありません。
+
 ### v1.2.3-beta (2026-06-07)
 
 **🔧 修正と検証:**
@@ -376,19 +224,20 @@ GPL-2.0 License - OBS Studioのライセンスに準拠
 ### v1.2.0 (2026-01-22)
 
 **🎉 新機能:**
-- ✨ **マルチコーデックサポート**: **H.265 (HEVC)** および **AV1** エンコード形式を完全サポート
+- ✨ **マルチコーデックサポート**: **H.265 (HEVC)** および ~~**AV1**~~ エンコード形式を完全サポート（AV1同期は現在利用できません）
   - **H.265**: H.264と比較して30-50%の帯域幅節約
-  - **AV1**: 次世代の高効率圧縮
+  - ~~**AV1**: 次世代の高効率圧縮~~
 - 🛠️ **3つの独立したエンコーダ**:
   - `SEI STAMPER (H.264)`
   - `SEI STAMPER (H.265)`
-  - `SEI STAMPER (AV1)`
+  - ~~`SEI STAMPER (AV1)`~~（現在、同期は利用できません）
   - 各エンコーダはハードウェアアクセラレーション（Intel/NVIDIA/AMD）をサポート
 - 🧠 **受信機の構成**: 正しくデコードするために、送信機と一致するコーデック形式を手動で選択する必要があります。
 
 **⚠️ 重要な制限事項**:
+
 - **H.264** および **H.265** は、SRTストリーミングで完全に動作確認されています。
-- **AV1** エンコードは利用可能ですが、OBS Studioのバージョンによっては、SRT出力でのAV1ストリーミングがサポートされていない場合があります。
+- ~~**AV1** エンコードは利用可能ですが、OBS Studioのバージョンによっては、SRT出力でのAV1ストリーミングがサポートされていない場合があります。~~ **現在の状態：AV1同期は利用できません。**
 
 ### v1.1.3 (2026-01-04)
 
@@ -415,4 +264,4 @@ GPL-2.0 License - OBS Studioのライセンスに準拠
 ---
 
 **現在のバージョン**: 1.3.0
-**最終更新**: 2026-09-04
+**最終更新**: 2026-09-05
